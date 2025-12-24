@@ -34,11 +34,10 @@ router.post('/register', async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
     const fullName = `${name} ${surname}`;
-    const userId = uuidv4();
 
     await pool.query(
-      'INSERT INTO users (user_id, email, full_name, phone_number, password_hash, role, wallet_balance) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-      [userId, email, fullName, phone, hashedPassword, 'USER', 0]
+      'INSERT INTO users (email, full_name, phone, password_hash, role, wallet_balance, pin) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      [email, fullName, phone, hashedPassword, 'USER', 0, '1234']
     );
 
     res.status(201).json({ message: 'User registered successfully' });

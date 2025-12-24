@@ -13,6 +13,44 @@ const pool = new Pool({
   connectionTimeoutMillis: 2000
 });
 
+async function getReferencedTables(tableName) {
+  const result = await pool.query(`
+    SELECT DISTINCT ccu.table_name AS referenced_table
+    FROM information_schema.table_constraints tc
+    JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name
+    JOIN information_schema.constraint_column_usage ccu ON tc.constraint_name = ccu.constraint_name
+    WHERE tc.table_schema = 'public' AND tc.table_name = $1 AND tc.constraint_type = 'FOREIGN KEY'
+  `, [tableName]);
+  return result.rows.map(row => row.referenced_table);
+}
+
+function topologicalSort(tables, dependencies) {
+  const visited = new Set();
+  const visiting = new Set();
+  const sorted = [];
+
+  function visit(table) {
+    if (visited.has(table)) return;
+    if (visiting.has(table)) throw new Error('Circular dependency detected');
+
+    visiting.add(table);
+    for (const dep of dependencies[table] || []) {
+      visit(dep);
+    }
+    visiting.delete(table);
+    visited.add(table);
+    sorted.push(table);
+  }
+
+  for (const table of tables) {
+    if (!visited.has(table)) {
+      visit(table);
+    }
+  }
+
+  return sorted;
+}
+
 async function generateCreateTables() {
   try {
     // Query all table names in public schema
@@ -25,18 +63,9 @@ async function generateCreateTables() {
 
     const tables = tablesResult.rows.map(row => row.table_name);
 
-    // Build dependency graph: table -> list of tables it references
-    const dependencies = {};
-    for (const tableName of tables) {
-      dependencies[tableName] = await getReferencedTables(tableName);
-    }
-
-    // Perform topological sort
-    const sortedTables = topologicalSort(tables, dependencies);
-
     let sqlOutput = '';
 
-    for (const tableName of sortedTables) {
+    for (const tableName of tables) {
       console.log(`\n-- CREATE TABLE for ${tableName}`);
       const createTableSQL = await buildCreateTableSQL(tableName);
       console.log(createTableSQL);
@@ -44,8 +73,8 @@ async function generateCreateTables() {
     }
 
     // Write to file
-    fs.writeFileSync('create_tables.sql', sqlOutput);
-    console.log('\nSQL statements written to create_tables.sql');
+    fs.writeFileSync('create_tables_from_local.sql', sqlOutput);
+    console.log('\nSQL statements written to create_tables_from_local.sql');
   } catch (error) {
     console.error('Error generating CREATE TABLE statements:', error);
   } finally {
