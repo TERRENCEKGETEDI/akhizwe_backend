@@ -27,7 +27,7 @@ router.post('/register', async (req, res) => {
     }
 
     // Check if user exists
-    const existingUser = await pool.query('SELECT email FROM users WHERE email = $1 OR phone_number = $2', [email, phone]);
+    const existingUser = await pool.query('SELECT email FROM users WHERE email = $1 OR phone = $2', [email, phone]);
     if (existingUser.rows.length > 0) {
       return res.status(400).json({ message: 'User already exists' });
     }
@@ -56,7 +56,7 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ message: 'Phone and password are required' });
     }
 
-    const result = await pool.query('SELECT * FROM users WHERE phone_number = $1', [phone]);
+    const result = await pool.query('SELECT * FROM users WHERE phone = $1', [phone]);
     if (result.rows.length === 0) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
@@ -78,7 +78,7 @@ router.post('/login', async (req, res) => {
       return res.status(403).json({ message: 'Account is blocked' });
     }
 
-    const token = jwt.sign({ email: user.email, role: user.role, phone: user.phone_number, wallet_balance: user.wallet_balance, daily_airtime_limit: user.daily_airtime_limit, airtime_balance: user.airtime_balance, data_balance: user.data_balance }, JWT_SECRET, { expiresIn: '1h' });
+    const token = jwt.sign({ email: user.email, role: user.role, phone: user.phone, wallet_balance: user.wallet_balance, daily_airtime_limit: user.daily_airtime_limit, airtime_balance: user.airtime_balance, data_balance: user.data_balance }, JWT_SECRET, { expiresIn: '1h' });
     res.json({
       token,
       user: {
@@ -87,7 +87,7 @@ router.post('/login', async (req, res) => {
         role: user.role,
         wallet_balance: user.wallet_balance,
         daily_airtime_limit: user.daily_airtime_limit,
-        phone: user.phone_number,
+        phone: user.phone,
         data_balance: user.data_balance
       }
     });
