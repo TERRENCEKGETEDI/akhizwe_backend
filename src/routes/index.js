@@ -51,12 +51,23 @@ router.post('/login', async (req, res) => {
   try {
     const { phone, password } = req.body;
 
+    if (!phone || !password) {
+      return res.status(400).json({ message: 'Phone and password are required' });
+    }
+
     const result = await pool.query('SELECT * FROM users WHERE phone = $1', [phone]);
     if (result.rows.length === 0) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
     const user = result.rows[0];
+
+    // Check if password_hash exists
+    if (!user.password_hash) {
+      console.error('Login error: password_hash is null for user:', phone);
+      return res.status(401).json({ message: 'Invalid credentials' });
+    }
+
     const isValidPassword = await bcrypt.compare(password, user.password_hash);
     if (!isValidPassword) {
       return res.status(401).json({ message: 'Invalid credentials' });
