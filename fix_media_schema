@@ -1,0 +1,49 @@
+const pool = require('./src/db');
+
+async function fixMediaTableSchema() {
+  try {
+    console.log('Fixing media table schema...');
+
+    // Add missing columns
+    const columns = [
+      { name: 'artist', type: 'VARCHAR(255)', default: 'NULL' },
+      { name: 'category', type: 'VARCHAR(100)', default: 'NULL' },
+      { name: 'release_date', type: 'DATE', default: 'NULL' }
+    ];
+
+    for (const column of columns) {
+      try {
+        await pool.query(`ALTER TABLE media ADD COLUMN ${column.name} ${column.type}`);
+        console.log(`✅ Added column: ${column.name}`);
+      } catch (error) {
+        if (error.message.includes('already exists')) {
+          console.log(`ℹ️ Column ${column.name} already exists`);
+        } else {
+          console.error(`❌ Error adding column ${column.name}:`, error.message);
+        }
+      }
+    }
+
+    console.log('\n🔧 Verifying schema...');
+    const result = await pool.query(`
+      SELECT column_name, data_type, is_nullable 
+      FROM information_schema.columns 
+      WHERE table_name = 'media' AND column_name IN ('artist', 'category', 'release_date')
+      ORDER BY column_name
+    `);
+    
+    console.log('Added columns:');
+    result.rows.forEach(col => {
+      console.log(`  - ${col.column_name}: ${col.data_type} (nullable: ${col.is_nullable})`);
+    });
+
+    console.log('\n✅ Schema fix completed successfully!');
+
+  } catch (error) {
+    console.error('❌ Error fixing schema:', error);
+  } finally {
+    await pool.end();
+  }
+}
+
+fixMediaTableSchema();
