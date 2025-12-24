@@ -634,33 +634,43 @@ router.get('/receipt/:transaction_ref', async (req, res) => {
 
 // POST /airtime-data/top-up
 router.post('/top-up', async (req, res) => {
+  console.log('Top-up route hit');
   try {
     const { amount, payment_method, pin } = req.body;
     const userEmail = req.user.email;
+    console.log('Top-up request:', { amount, payment_method, pin: pin ? '***' : null, userEmail });
 
     if (!amount || !payment_method || !pin) {
+      console.log('Missing required fields');
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
     const amt = parseFloat(amount);
     if (amt <= 0) {
+      console.log('Invalid amount:', amt);
       return res.status(400).json({ error: 'Invalid amount' });
     }
 
     // Get user
     const userResult = await pool.query('SELECT pin FROM users WHERE email = $1', [userEmail]);
+    console.log('User query result:', userResult.rows.length);
     if (userResult.rows.length === 0) {
+      console.log('User not found');
       return res.status(404).json({ error: 'User not found' });
     }
     const user = userResult.rows[0];
 
     if (user.pin !== pin) {
+      console.log('PIN mismatch');
       await logError('PIN mismatch', `User: ${userEmail}`);
       return res.status(403).json({ error: 'Invalid PIN' });
     }
 
+    console.log('PIN valid, proceeding with top-up');
+
     // Mock payment success
     const transactionRef = uuidv4();
+    console.log('Inserting transaction:', transactionRef);
     await pool.query(
       'INSERT INTO transactions (transaction_ref, user_email, amount, status, transaction_type) VALUES ($1, $2, $3, $4, $5)',
       [transactionRef, userEmail, amt, 'SUCCESS', 'WALLET_TOPUP']
@@ -668,6 +678,7 @@ router.post('/top-up', async (req, res) => {
 
     // Check for outstanding advances and deduct
     const outstandingResult = await pool.query('SELECT * FROM advances WHERE user_email = $1 AND repaid = FALSE ORDER BY created_at', [userEmail]);
+    console.log('Outstanding advances:', outstandingResult.rows.length);
     let remainingAmount = amt;
 
     for (const advance of outstandingResult.rows) {
@@ -684,9 +695,11 @@ router.post('/top-up', async (req, res) => {
       }
     }
 
+    console.log('Updating wallet balance with:', remainingAmount);
     // Add remaining to wallet
     await pool.query('UPDATE users SET wallet_balance = wallet_balance + $1 WHERE email = $2', [remainingAmount, userEmail]);
 
+    console.log('Top-up successful');
     res.json({ message: 'Wallet topped up successfully', transaction_ref: transactionRef, added_amount: remainingAmount });
   } catch (error) {
     console.error('Top up error:', error);
