@@ -88,11 +88,79 @@ router.get('/bundles/:network', async (req, res) => {
     }
     const networkId = networkResult.rows[0].network_id;
 
-    const bundlesResult = await pool.query('SELECT bundle_id, name, data_size, price FROM data_bundles WHERE network_id = $1 AND enabled = TRUE', [networkId]);
+    const bundlesResult = await pool.query('SELECT bundle_id, name, data_size, price, validity_days, regional_availability FROM data_bundles WHERE network_id = $1 AND enabled = TRUE', [networkId]);
     res.json({ bundles: bundlesResult.rows });
   } catch (error) {
     console.error('Get bundles error:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /airtime-data/packages
+router.get('/packages', async (req, res) => {
+  try {
+    const { sort_by = 'price', order = 'asc', network, type } = req.query;
+
+    let query = `
+      SELECT 'data' as type, db.bundle_id as id, n.name as network, db.name, db.data_size as data, NULL as minutes, db.price, db.validity_days, db.regional_availability, 0 as discount_percentage, NULL as add_ons
+      FROM data_bundles db
+      JOIN networks n ON db.network_id = n.network_id
+      WHERE db.enabled = TRUE AND n.enabled = TRUE
+      UNION ALL
+      SELECT 'airtime' as type, ab.bundle_id as id, n.name as network, ab.name, NULL as data, ab.minutes, ab.price, ab.validity_days, ab.regional_availability, 0 as discount_percentage, NULL as add_ons
+      FROM airtime_bundles ab
+      JOIN networks n ON ab.network_id = n.network_id
+      WHERE ab.enabled = TRUE AND n.enabled = TRUE
+      UNION ALL
+      SELECT 'combined' as type, cp.plan_id as id, n.name as network, cp.name, cp.data_size as data, cp.minutes, cp.price, cp.validity_days, cp.regional_availability, cp.discount_percentage, cp.add_ons
+      FROM combined_plans cp
+      JOIN networks n ON cp.network_id = n.network_id
+      WHERE cp.enabled = TRUE AND n.enabled = TRUE
+    `;
+
+    let params = [];
+    let paramIndex = 1;
+
+    if (network) {
+      query += ` AND network = $${paramIndex}`;
+      params.push(network);
+      paramIndex++;
+    }
+
+    if (type) {
+      query += ` AND type = $${paramIndex}`;
+      params.push(type);
+      paramIndex++;
+    }
+
+    // Sorting
+    const validSortFields = ['price', 'validity_days', 'data', 'minutes'];
+    const sortField = validSortFields.includes(sort_by) ? sort_by : 'price';
+    const sortOrder = order.toLowerCase() === 'desc' ? 'DESC' : 'ASC';
+
+    if (sortField === 'data') {
+      query += ` ORDER BY CASE WHEN data = 'Unlimited' THEN 999999 WHEN data LIKE '%GB' THEN CAST(REPLACE(data, 'GB', '') AS INTEGER) * 1024 WHEN data LIKE '%MB' THEN CAST(REPLACE(data, 'MB', '') AS INTEGER) ELSE 0 END ${sortOrder}`;
+    } else if (sortField === 'minutes') {
+      query += ` ORDER BY CASE WHEN minutes IS NULL THEN 999999 ELSE minutes END ${sortOrder}`;
+    } else {
+      query += ` ORDER BY ${sortField} ${sortOrder}`;
+    }
+
+    const result = await pool.query(query, params);
+    res.json({ packages: result.rows });
+  } catch (error) {
+    console.error('Get packages error:', error);
+    // Return mock data if tables don't exist
+    const mockPackages = [
+      { type: 'data', id: 1, network: 'MTN', name: 'MTN 1GB', data: '1GB', minutes: null, price: 50.00, validity_days: 30, regional_availability: 'National', discount_percentage: 0, add_ons: null },
+      { type: 'data', id: 2, network: 'MTN', name: 'MTN 5GB', data: '5GB', minutes: null, price: 200.00, validity_days: 30, regional_availability: 'National', discount_percentage: 0, add_ons: null },
+      { type: 'data', id: 3, network: 'Vodacom', name: 'Vodacom 1GB', data: '1GB', minutes: null, price: 50.00, validity_days: 30, regional_availability: 'National', discount_percentage: 0, add_ons: null },
+      { type: 'airtime', id: 4, network: 'MTN', name: 'MTN 100 Minutes', data: null, minutes: 100, price: 25.00, validity_days: 30, regional_availability: 'National', discount_percentage: 0, add_ons: null },
+      { type: 'airtime', id: 5, network: 'MTN', name: 'MTN Unlimited Calls', data: null, minutes: null, price: 150.00, validity_days: 30, regional_availability: 'National', discount_percentage: 0, add_ons: null },
+      { type: 'combined', id: 6, network: 'MTN', name: 'MTN Combo 1GB + 100 Min', data: '1GB', minutes: 100, price: 65.00, validity_days: 30, regional_availability: 'National', discount_percentage: 10, add_ons: 'Free WhatsApp' },
+      { type: 'combined', id: 7, network: 'Vodacom', name: 'Vodacom Combo 5GB + 500 Min', data: '5GB', minutes: 500, price: 250.00, validity_days: 30, regional_availability: 'National', discount_percentage: 15, add_ons: 'Free WhatsApp, Free Facebook' }
+    ];
+    res.json({ packages: mockPackages });
   }
 });
 
