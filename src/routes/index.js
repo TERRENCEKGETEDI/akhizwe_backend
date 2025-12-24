@@ -50,18 +50,24 @@ router.post('/register', async (req, res) => {
 // Login
 router.post('/login', async (req, res) => {
   try {
+    console.log('🔐 Login attempt for phone:', req.body.phone);
     const { phone, password } = req.body;
 
     if (!phone || !password) {
+      console.log('❌ Login failed: missing phone or password');
       return res.status(400).json({ message: 'Phone and password are required' });
     }
 
+    console.log('🔍 Querying database for phone:', phone);
     const result = await pool.query('SELECT * FROM users WHERE phone = $1', [phone]);
+    console.log('📊 Query result rows:', result.rows.length);
     if (result.rows.length === 0) {
+      console.log('❌ Login failed: user not found');
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
     const user = result.rows[0];
+    console.log('👤 User found:', user.email, user.role);
 
     // Check if password_hash exists
     if (!user.password_hash) {
@@ -69,10 +75,14 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
+    console.log('🔒 Checking password...');
     const isValidPassword = await bcrypt.compare(password, user.password_hash);
     if (!isValidPassword) {
+      console.log('❌ Login failed: invalid password');
       return res.status(401).json({ message: 'Invalid credentials' });
     }
+
+    console.log('✅ Login successful for user:', user.email);
 
     if (user.is_blocked) {
       return res.status(403).json({ message: 'Account is blocked' });

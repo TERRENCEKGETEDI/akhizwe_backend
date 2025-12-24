@@ -18,7 +18,7 @@ async function seedAdmin() {
     }
 
     await pool.query(
-      'INSERT INTO users (user_id, email, full_name, phone_number, password_hash, role, wallet_balance) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      'INSERT INTO users (user_id, email, full_name, phone, password_hash, role, wallet_balance) VALUES ($1, $2, $3, $4, $5, $6, $7)',
       [adminUserId, adminEmail, adminFullName, adminPhone, adminPasswordHash, 'ADMIN', 1000]
     );
 

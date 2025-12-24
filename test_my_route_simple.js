@@ -10,21 +10,21 @@ async function testMyRouteSimple() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        phone: '0712345678',
-        password: 'password123'
+        phone: '0710000000',
+        password: 'password'
       })
     });
     
     if (!loginResponse.ok) {
       console.log('❌ Login failed. Trying with different credentials...');
       
-      // Try with user1@mail.com user
+      // Try with second test user
       const loginResponse2 = await fetch('http://localhost:5000/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           phone: '0711111111', // Try different phone
-          password: 'password123'
+          password: 'password'
         })
       });
       

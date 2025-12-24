@@ -11,13 +11,13 @@ async function createTestUser() {
     const fullName = 'Test User';
 
     // Check if user already exists
-    const existing = await pool.query('SELECT email FROM users WHERE email = $1 OR phone_number = $2', [email, phone]);
+    const existing = await pool.query('SELECT email FROM users WHERE email = $1 OR phone = $2', [email, phone]);
     if (existing.rows.length > 0) {
       console.log('User already exists:', existing.rows[0]);
       // Update password if user exists
       const hashedPassword = await bcrypt.hash(password, 10);
       await pool.query(
-        'UPDATE users SET password_hash = $1 WHERE phone_number = $2',
+        'UPDATE users SET password_hash = $1 WHERE phone = $2',
         [hashedPassword, phone]
       );
       console.log('Password updated for user:', phone);
@@ -28,7 +28,7 @@ async function createTestUser() {
     const hashedPassword = await bcrypt.hash(password, 10);
     const userId = uuidv4();
     await pool.query(
-      'INSERT INTO users (user_id, email, full_name, phone_number, password_hash, role, wallet_balance) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      'INSERT INTO users (user_id, email, full_name, phone, password_hash, role, wallet_balance) VALUES ($1, $2, $3, $4, $5, $6, $7)',
       [userId, email, fullName, phone, hashedPassword, 'USER', 100]
     );
 
