@@ -17,13 +17,86 @@ async function seedAdmin() {
     }
 
     await pool.query(
-      'INSERT INTO users (email, full_name, phone, password_hash, role, wallet_balance) VALUES ($1, $2, $3, $4, $5, $6)',
+      'INSERT INTO users (email, full_name, phone_number, password_hash, role, wallet_balance) VALUES ($1, $2, $3, $4, $5, $6)',
       [adminEmail, adminFullName, adminPhone, adminPasswordHash, 'ADMIN', 1000]
     );
 
     console.log('Admin user seeded successfully');
   } catch (error) {
     console.error('Error seeding admin:', error);
+  }
+}
+
+async function seedNetworks() {
+  try {
+    // Check if networks exist
+    const existing = await pool.query('SELECT COUNT(*) FROM networks');
+    if (parseInt(existing.rows[0].count) > 0) {
+      console.log('Networks already seeded');
+      return;
+    }
+
+    const networks = [
+      { name: 'Vodacom' },
+      { name: 'MTN' },
+      { name: 'Cell C' },
+      { name: 'Telkom' }
+    ];
+
+    for (const network of networks) {
+      await pool.query('INSERT INTO networks (name) VALUES ($1)', [network.name]);
+    }
+
+    console.log('Networks seeded successfully');
+  } catch (error) {
+    console.error('Error seeding networks:', error);
+  }
+}
+
+async function seedDataBundles() {
+  try {
+    // Check if data bundles exist
+    const existing = await pool.query('SELECT COUNT(*) FROM data_bundles');
+    if (parseInt(existing.rows[0].count) > 0) {
+      console.log('Data bundles already seeded');
+      return;
+    }
+
+    // Get network IDs
+    const networkRows = await pool.query('SELECT network_id, name FROM networks');
+    const networkMap = {};
+    networkRows.rows.forEach(row => {
+      networkMap[row.name] = row.network_id;
+    });
+
+    const bundles = [
+      { network: 'Vodacom', name: '1GB Data', data_size: '1GB', price: 50.00 },
+      { network: 'Vodacom', name: '5GB Data', data_size: '5GB', price: 200.00 },
+      { network: 'Vodacom', name: '10GB Data', data_size: '10GB', price: 350.00 },
+      { network: 'MTN', name: '1GB Data', data_size: '1GB', price: 45.00 },
+      { network: 'MTN', name: '5GB Data', data_size: '5GB', price: 180.00 },
+      { network: 'MTN', name: '10GB Data', data_size: '10GB', price: 320.00 },
+      { network: 'Cell C', name: '1GB Data', data_size: '1GB', price: 40.00 },
+      { network: 'Cell C', name: '5GB Data', data_size: '5GB', price: 160.00 },
+      { network: 'Cell C', name: '10GB Data', data_size: '10GB', price: 300.00 },
+      { network: 'Telkom', name: '1GB Data', data_size: '1GB', price: 55.00 },
+      { network: 'Telkom', name: '5GB Data', data_size: '5GB', price: 220.00 },
+      { network: 'Telkom', name: '10GB Data', data_size: '10GB', price: 400.00 }
+    ];
+
+    for (const bundle of bundles) {
+      const networkId = networkMap[bundle.network];
+      if (networkId) {
+        await pool.query(
+          'INSERT INTO data_bundles (network_id, name, data_size, price) VALUES ($1, $2, $3, $4)',
+          [networkId, bundle.name, bundle.data_size, bundle.price]
+        );
+      }
+    }
+
+    console.log('Data bundles seeded successfully');
+  } catch (error) {
+    console.error('Error seeding data bundles:', error);
   }
 }
 
@@ -91,13 +164,12 @@ async function seedTickets() {
         INSERT INTO tickets (
           ticket_id, ticket_type, ticket_subtype, title, description, event_date, end_date,
           location, departure_location, arrival_location, departure_time, arrival_time,
-          price, total_quantity, available_quantity, performers, teams, start_time, end_time
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+          price, total_quantity, available_quantity
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
       `, [
         ticket.ticket_id, ticket.ticket_type, ticket.ticket_subtype, ticket.title, ticket.description,
         ticket.event_date, ticket.end_date, ticket.location, ticket.departure_location, ticket.arrival_location,
-        ticket.departure_time, ticket.arrival_time, ticket.price, ticket.total_quantity, ticket.available_quantity,
-        JSON.stringify(ticket.performers || null), JSON.stringify(ticket.teams || null), ticket.start_time, ticket.end_time
+        ticket.departure_time, ticket.arrival_time, ticket.price, ticket.total_quantity, ticket.available_quantity
       ]);
     }
 
@@ -109,6 +181,8 @@ async function seedTickets() {
 
 async function main() {
   await seedAdmin();
+  await seedNetworks();
+  await seedDataBundles();
   await seedTickets();
   pool.end();
 }

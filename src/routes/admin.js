@@ -29,7 +29,7 @@ router.get('/users', async (req, res) => {
     const { page = 1, limit = 10, role, blocked } = req.query;
     const offset = (page - 1) * limit;
 
-    let query = 'SELECT email, full_name, phone, role, wallet_balance, is_blocked, created_at FROM users WHERE 1=1';
+    let query = 'SELECT email, full_name, phone_number, role, wallet_balance, is_blocked, created_at FROM users WHERE 1=1';
     const params = [];
     let paramIndex = 1;
 

@@ -124,7 +124,7 @@ router.post('/buy-airtime', async (req, res) => {
 
     // Get user details
     const userResult = await pool.query(
-      'SELECT wallet_balance, pin, phone FROM users WHERE email = $1',
+      'SELECT wallet_balance, pin, phone_number FROM users WHERE email = $1',
       [userEmail]
     );
     if (userResult.rows.length === 0) {
@@ -171,7 +171,7 @@ router.post('/buy-airtime', async (req, res) => {
     );
 
     // If buying for own phone, add to airtime_balance
-    if (phone === user.phone) {
+    if (phone === user.phone_number) {
       await pool.query(
         'UPDATE users SET airtime_balance = airtime_balance + $1 WHERE email = $2',
         [amt, userEmail]
@@ -244,7 +244,7 @@ router.post('/send-airtime', async (req, res) => {
     }
 
     // Get recipient
-    const recipientResult = await pool.query('SELECT email FROM users WHERE phone = $1', [recipient_phone]);
+    const recipientResult = await pool.query('SELECT email FROM users WHERE phone_number = $1', [recipient_phone]);
     if (recipientResult.rows.length === 0) {
       return res.status(404).json({ error: 'Recipient not found' });
     }
@@ -318,7 +318,7 @@ router.post('/buy-data', async (req, res) => {
 
     // Get user details
     const userResult = await pool.query(
-      'SELECT wallet_balance, pin, phone FROM users WHERE email = $1',
+      'SELECT wallet_balance, pin, phone_number FROM users WHERE email = $1',
       [userEmail]
     );
     if (userResult.rows.length === 0) {
@@ -365,7 +365,7 @@ router.post('/buy-data', async (req, res) => {
     );
 
     // If buying for own phone, add to data_balance
-    if (phone === user.phone) {
+    if (phone === user.phone_number) {
       const dataMB = parseDataSize(bundle.data_size);
       await pool.query(
         'UPDATE users SET data_balance = data_balance + $1 WHERE email = $2',
@@ -451,6 +451,13 @@ router.post('/send-data', async (req, res) => {
     if (amt > limits.monthlyLimit) {
       return res.status(400).json({ error: 'Monthly limit exceeded' });
     }
+
+    // Get recipient
+    const recipientResult = await pool.query('SELECT email FROM users WHERE phone_number = $1', [recipient_phone]);
+    if (recipientResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Recipient not found' });
+    }
+    const recipientEmail = recipientResult.rows[0].email;
 
     // Create transaction
     const transactionRef = uuidv4();
