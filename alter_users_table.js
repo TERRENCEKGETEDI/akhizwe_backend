@@ -5,12 +5,9 @@ async function alterUsersTable() {
   try {
     await pool.query(`
       ALTER TABLE users
-      ADD COLUMN IF NOT EXISTS pin VARCHAR(4),
-      ADD COLUMN IF NOT EXISTS daily_airtime_limit DECIMAL DEFAULT 1000,
-      ADD COLUMN IF NOT EXISTS monthly_airtime_limit DECIMAL DEFAULT 5000,
-      ADD COLUMN IF NOT EXISTS last_purchase_date DATE
+      RENAME COLUMN password TO password_hash
     `);
-    console.log('Users table altered successfully');
+    console.log('Users table altered successfully - password renamed to password_hash');
   } catch (error) {
     console.error('Error altering users table:', error);
   } finally {

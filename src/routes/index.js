@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { v4: uuidv4 } = require('uuid');
 const pool = require('../db');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret';
@@ -33,10 +34,11 @@ router.post('/register', async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
     const fullName = `${name} ${surname}`;
+    const userId = uuidv4();
 
     await pool.query(
-      'INSERT INTO users (email, full_name, phone_number, password_hash, role, wallet_balance) VALUES ($1, $2, $3, $4, $5, $6)',
-      [email, fullName, phone, hashedPassword, 'USER', 0]
+      'INSERT INTO users (user_id, email, full_name, phone_number, password_hash, role, wallet_balance) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      [userId, email, fullName, phone, hashedPassword, 'USER', 0]
     );
 
     res.status(201).json({ message: 'User registered successfully' });

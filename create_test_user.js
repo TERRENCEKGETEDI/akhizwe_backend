@@ -1,6 +1,7 @@
 require('dotenv').config();
 const pool = require('./src/db');
 const bcrypt = require('bcryptjs');
+const { v4: uuidv4 } = require('uuid');
 
 async function createTestUser() {
   try {
@@ -25,9 +26,10 @@ async function createTestUser() {
 
     // Create new user
     const hashedPassword = await bcrypt.hash(password, 10);
+    const userId = uuidv4();
     await pool.query(
-      'INSERT INTO users (email, full_name, phone_number, password_hash, role, wallet_balance) VALUES ($1, $2, $3, $4, $5, $6)',
-      [email, fullName, phone, hashedPassword, 'USER', 100]
+      'INSERT INTO users (user_id, email, full_name, phone_number, password_hash, role, wallet_balance) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      [userId, email, fullName, phone, hashedPassword, 'USER', 100]
     );
 
     console.log('Test user created successfully!');

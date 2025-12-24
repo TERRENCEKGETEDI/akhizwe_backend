@@ -8,6 +8,7 @@ async function seedAdmin() {
     const adminPasswordHash = '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi'; // bcrypt hash for 'password'
     const adminFullName = 'Admin User';
     const adminPhone = '0712345678';
+    const adminUserId = uuidv4();
 
     // Check if admin exists
     const existing = await pool.query('SELECT email FROM users WHERE email = $1', [adminEmail]);
@@ -17,8 +18,8 @@ async function seedAdmin() {
     }
 
     await pool.query(
-      'INSERT INTO users (email, full_name, phone_number, password_hash, role, wallet_balance) VALUES ($1, $2, $3, $4, $5, $6)',
-      [adminEmail, adminFullName, adminPhone, adminPasswordHash, 'ADMIN', 1000]
+      'INSERT INTO users (user_id, email, full_name, phone_number, password_hash, role, wallet_balance) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      [adminUserId, adminEmail, adminFullName, adminPhone, adminPasswordHash, 'ADMIN', 1000]
     );
 
     console.log('Admin user seeded successfully');
