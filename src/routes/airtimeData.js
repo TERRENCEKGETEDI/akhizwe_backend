@@ -541,6 +541,12 @@ router.post('/request-advance', async (req, res) => {
       [transactionRef, userEmail, amt, 'SUCCESS', 'ADVANCE']
     );
 
+    // Insert into advances table
+    await pool.query(
+      'INSERT INTO advances (transaction_ref, user_email, amount, service_fee) VALUES ($1, $2, $3, $4)',
+      [transactionRef, userEmail, amt, 0]
+    );
+
     // Add to wallet
     await pool.query(
       'UPDATE users SET wallet_balance = wallet_balance + $1 WHERE email = $2',
