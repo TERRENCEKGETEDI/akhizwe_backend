@@ -36,42 +36,21 @@ app.use(cors(corsOptions));
 app.use(bodyParser.json());
 app.use('/api', routes);
 
-// Serve static files from uploads directory with proper headers and range support
-app.get('/:file(*)', (req, res) => {
-  const filePath = path.join(__dirname, '../uploads', req.params.file);
-  if (!fs.existsSync(filePath)) {
-    return res.status(404).send('File not found');
-  }
-  const ext = path.extname(filePath).toLowerCase();
-  let contentType = 'application/octet-stream';
-  if (ext === '.mp4') contentType = 'video/mp4';
-  else if (ext === '.mp3') contentType = 'audio/mpeg';
-  else if (ext === '.jpg' || ext === '.jpeg') contentType = 'image/jpeg';
-  else if (ext === '.png') contentType = 'image/png';
-  // add more if needed
-  const stat = fs.statSync(filePath);
-  const fileSize = stat.size;
-  const range = req.headers.range;
-  if (range) {
-    const parts = range.replace(/bytes=/, "").split("-");
-    const start = parseInt(parts[0], 10);
-    const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-    const chunksize = (end - start) + 1;
-    const file = fs.createReadStream(filePath, { start, end });
-    const head = {
-      'Content-Range': `bytes ${start}-${end}/${fileSize}`,
-      'Accept-Ranges': 'bytes',
-      'Content-Length': chunksize,
-      'Content-Type': contentType,
-    };
-    res.writeHead(206, head);
-    file.pipe(res);
-  } else {
-    res.writeHead(200, {
-      'Content-Length': fileSize,
-      'Content-Type': contentType,
-    });
-    fs.createReadStream(filePath).pipe(res);
+// Serve files by redirecting to Supabase
+app.get('/:file(*)', async (req, res) => {
+  const fileName = req.params.file;
+  try {
+    const result = await pool.query('SELECT media_type FROM media WHERE file_path = $1', [fileName]);
+    if (result.rows.length === 0) {
+      return res.status(404).send('File not found');
+    }
+    const mediaType = result.rows[0].media_type;
+    const bucket = mediaType === 'VIDEO' ? 'videos' : mediaType === 'MUSIC' ? 'audio' : 'images';
+    const supabaseUrl = `https://rkuzqajmxnatyulwoxzy.supabase.co/storage/v1/object/public/${bucket}/${fileName}`;
+    res.redirect(supabaseUrl);
+  } catch (error) {
+    console.error('Error serving file:', error);
+    res.status(500).send('Internal server error');
   }
 });
 
