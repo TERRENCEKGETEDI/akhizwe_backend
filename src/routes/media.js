@@ -15,15 +15,9 @@ const supabase = createClient(
 
 // Helper function to generate signed URL
 async function generateSignedUrl(bucket, filePath) {
-  try {
-    const { data } = await supabase.storage
-      .from(bucket)
-      .createSignedUrl(filePath, 60 * 60); // 1 hour
-    return data?.signedUrl || null;
-  } catch (error) {
-    console.error('Error generating signed URL:', error);
-    return null;
-  }
+  // For now, use public URL since buckets might be public for upload
+  // TODO: Use signed URLs for private buckets
+  return `https://rkuzqajmxnatyulwoxzy.supabase.co/storage/v1/object/public/${bucket}/${encodeURIComponent(filePath)}`;
 }
 
 // Helper function to get bucket from media_type
@@ -108,7 +102,8 @@ router.post('/upload', authenticateToken, upload.single('file'), async (req, res
     const userId = userResult.rows[0].user_id;
 
     const media_id = uuidv4();
-    const filePath = `${Date.now()}_${file.originalname}`;
+    const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const filePath = `${Date.now()}_${sanitizedName}`;
 
     // Upload to Supabase
     let uploadData;
@@ -474,11 +469,11 @@ router.post('/:id/download', async (req, res) => {
 
     const media = result.rows[0];
 
-    // Generate signed URL for download
+    // Generate URL for download
     const bucket = getBucketFromMediaType(media.media_type);
-    let signedUrl = null;
+    let downloadUrl = null;
     if (bucket && media.file_path) {
-      signedUrl = await generateSignedUrl(bucket, media.file_path);
+      downloadUrl = `https://rkuzqajmxnatyulwoxzy.supabase.co/storage/v1/object/public/${bucket}/${encodeURIComponent(media.file_path)}`;
     }
 
     // Send download notification if user is authenticated and not the owner
@@ -499,7 +494,7 @@ router.post('/:id/download', async (req, res) => {
       }
     }
 
-    res.json({ download_url: signedUrl });
+    res.json({ download_url: downloadUrl });
   } catch (error) {
     console.error('Error processing download:', error);
     res.status(500).json({ error: 'Internal server error' });
