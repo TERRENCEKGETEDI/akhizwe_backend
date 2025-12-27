@@ -182,21 +182,45 @@ router.get('/my', authenticateToken, async (req, res) => {
   }
 });
 
+// GET /media/liked - Get user's liked media IDs
+router.get('/liked', authenticateToken, async (req, res) => {
+  try {
+    console.log(`Fetching liked media for user: ${req.user.email}`);
+
+    const result = await pool.query(
+      `SELECT mi.media_id
+        FROM media_interactions mi
+        WHERE mi.user_email = $1 AND mi.interaction_type = 'LIKE'`,
+      [req.user.email]
+    );
+
+    // Extract media IDs that user has liked
+    const likedMediaIds = result.rows.map(row => row.media_id);
+
+    console.log(`Found ${likedMediaIds.length} liked media IDs for user ${req.user.email}`);
+
+    res.json({ likedMediaIds });
+  } catch (error) {
+    console.error('Error fetching liked media:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /media/favorites - Get user's favorited media (must come before :id route)
 router.get('/favorites', authenticateToken, async (req, res) => {
   try {
     console.log(`Fetching favorites for user: ${req.user.email}`);
-    
+
     const result = await pool.query(
       `SELECT mi.media_id
-       FROM media_interactions mi
-       WHERE mi.user_email = $1 AND mi.interaction_type = 'FAVORITE'`,
+        FROM media_interactions mi
+        WHERE mi.user_email = $1 AND mi.interaction_type = 'FAVORITE'`,
       [req.user.email]
     );
 
     // Extract media IDs that user has favorited
     const favoritedMediaIds = result.rows.map(row => row.media_id);
-    
+
     console.log(`Found ${favoritedMediaIds.length} favorited media IDs for user ${req.user.email}`);
 
     res.json({ favoritedMediaIds });
