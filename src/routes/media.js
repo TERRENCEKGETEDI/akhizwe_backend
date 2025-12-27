@@ -6,28 +6,58 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const NotificationService = require('../services/notificationService');
+const { createClient } = require('@supabase/supabase-js');
+
+const supabase = createClient(
+  'https://rkuzqajmxnatyulwoxzy.supabase.co',
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJrdXpxYWpteG5hdHl1bHdveHp5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY3ODQ3NjcsImV4cCI6MjA4MjM2MDc2N30.vGNaNmfhVd8YvLIhHyr0vCeaM-qshoJnKqEsKv0gsjM'
+);
+
+// Helper function to generate signed URL
+async function generateSignedUrl(bucket, filePath) {
+  try {
+    const { data } = await supabase.storage
+      .from(bucket)
+      .createSignedUrl(filePath, 60 * 60); // 1 hour
+    return data?.signedUrl || null;
+  } catch (error) {
+    console.error('Error generating signed URL:', error);
+    return null;
+  }
+}
+
+// Helper function to get bucket from media_type
+function getBucketFromMediaType(mediaType) {
+  if (mediaType === 'VIDEO') return 'videos';
+  if (mediaType === 'MUSIC') return 'audio';
+  if (mediaType === 'IMAGE') return 'images';
+  return null;
+}
+
+// Helper function to add signed_url to media objects
+async function addSignedUrls(mediaArray) {
+  for (const media of mediaArray) {
+    const bucket = getBucketFromMediaType(media.media_type);
+    if (bucket && media.file_path) {
+      media.signed_url = await generateSignedUrl(bucket, media.file_path);
+    }
+  }
+  return mediaArray;
+}
 
 const router = express.Router();
 
-// Configure multer for file uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, path.join(__dirname, '../../uploads'));
-  },
-  filename: (req, file, cb) => {
-    const uniqueName = uuidv4() + path.extname(file.originalname);
-    cb(null, uniqueName);
-  }
-});
+// Configure multer for file uploads (memory storage for Supabase)
+const storage = multer.memoryStorage();
 
 const upload = multer({
   storage,
   limits: { fileSize: 100 * 1024 * 1024 }, // 100MB
   fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('audio/') || file.mimetype.startsWith('video/')) {
+    if (file.mimetype.startsWith('audio/') || file.mimetype.startsWith('video/') || file.mimetype.startsWith('image/')) {
       cb(null, true);
     } else {
-      cb(new Error('Only audio and video files are allowed'));
+      cb(new Error('Only audio, video, and image files are allowed'));
     }
   }
 });
@@ -46,50 +76,69 @@ router.post('/upload', authenticateToken, upload.single('file'), async (req, res
       return res.status(400).json({ error: 'Title and media_type are required' });
     }
 
-    if (!['audio', 'video'].includes(media_type)) {
+    if (!['audio', 'video', 'image'].includes(media_type)) {
       return res.status(400).json({ error: 'Invalid media_type' });
     }
 
     // Map frontend media types to database values
-    const dbMediaType = media_type === 'audio' ? 'MUSIC' : 'VIDEO';
+    const dbMediaType = media_type === 'audio' ? 'MUSIC' : media_type === 'video' ? 'VIDEO' : 'IMAGE';
+
+    // Determine Supabase bucket
+    const bucket = media_type === 'audio' ? 'audio' : media_type === 'video' ? 'videos' : 'images';
 
     // Validate file type and size
     const allowedAudio = ['audio/mpeg', 'audio/wav', 'audio/aac'];
     const allowedVideo = ['video/mp4', 'video/x-matroska', 'video/webm'];
-    const allowedTypes = media_type === 'audio' ? allowedAudio : allowedVideo;
+    const allowedImage = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    const allowedTypes = media_type === 'audio' ? allowedAudio : media_type === 'video' ? allowedVideo : allowedImage;
     if (!allowedTypes.includes(file.mimetype)) {
-      fs.unlinkSync(file.path);
       return res.status(400).json({ error: 'Invalid file type' });
     }
 
     if (file.size > 100 * 1024 * 1024) { // 100MB
-      fs.unlinkSync(file.path);
       return res.status(400).json({ error: 'File too large' });
     }
 
-    // Get user's full name to auto-populate artist field
-    const userResult = await pool.query('SELECT full_name FROM users WHERE email = $1', [req.user.email]);
+    // Get user's full name and id to auto-populate artist field and for media_files
+    const userResult = await pool.query('SELECT full_name, user_id FROM users WHERE email = $1', [req.user.email]);
     const userFullName = userResult.rows[0]?.full_name || req.user.email; // Fallback to email if full_name is null
+    const userId = userResult.rows[0]?.user_id;
 
     const media_id = uuidv4();
-    const file_path = `uploads/${file.filename}`;
-    const file_url = `/${file_path}`; // Required file_url field
+    const filePath = `${Date.now()}_${file.originalname}`;
+
+    // Upload to Supabase
+    const { data, error } = await supabase.storage
+      .from(bucket)
+      .upload(filePath, file.buffer, {
+        contentType: file.mimetype,
+        upsert: false
+      });
+
+    if (error) {
+      console.error('Supabase upload error:', error);
+      return res.status(500).json({ error: 'Failed to upload file' });
+    }
+
     const file_size = file.size;
     const currentDate = new Date().toISOString().split('T')[0]; // Current date in YYYY-MM-DD format
 
     await pool.query(
       `INSERT INTO media (media_id, title, description, media_type, uploader_email, file_url, file_path, file_size, artist, category, release_date, copyright_declared, is_approved, uploaded_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CURRENT_TIMESTAMP)`,
-      [media_id, title, description || '', dbMediaType, req.user.email, file_url, file_path, file_size, userFullName, category || '', currentDate, true, false]
+      [media_id, title, description || '', dbMediaType, req.user.email, filePath, filePath, file_size, userFullName, category || '', currentDate, true, false]
+    );
+
+    // Insert into media_files table
+    await pool.query(
+      `INSERT INTO media_files (user_id, bucket, file_path, file_type, file_size, title)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [userId, bucket, filePath, file.mimetype, file_size, title]
     );
 
     res.status(201).json({ message: 'Media uploaded successfully, pending approval', media_id });
   } catch (error) {
     console.error('Error uploading media:', error);
-    // Delete file if db insert fails
-    if (req.file) {
-      fs.unlinkSync(req.file.path);
-    }
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -113,10 +162,13 @@ router.get('/my', authenticateToken, async (req, res) => {
     // Normalize media data to match frontend expectations
     const normalizedMedia = result.rows.map(media => ({
       ...media,
-      media_type: media.media_type === 'MUSIC' ? 'audio' : media.media_type === 'VIDEO' ? 'video' : media.media_type,
+      media_type: media.media_type === 'MUSIC' ? 'audio' : media.media_type === 'VIDEO' ? 'video' : media.media_type === 'IMAGE' ? 'image' : media.media_type,
       likes: parseInt(media.likes) || 0,
       comments: parseInt(media.comments) || 0
     }));
+
+    // Add signed URLs
+    await addSignedUrls(normalizedMedia);
 
     res.json({ media: normalizedMedia });
   } catch (error) {
@@ -172,10 +224,13 @@ router.get('/pending', authenticateToken, async (req, res) => {
     // Normalize media data to match frontend expectations
     const normalizedMedia = result.rows.map(media => ({
       ...media,
-      media_type: media.media_type === 'MUSIC' ? 'audio' : media.media_type === 'VIDEO' ? 'video' : media.media_type,
+      media_type: media.media_type === 'MUSIC' ? 'audio' : media.media_type === 'VIDEO' ? 'video' : media.media_type === 'IMAGE' ? 'image' : media.media_type,
       likes: parseInt(media.likes) || 0,
       comments: parseInt(media.comments) || 0
     }));
+
+    // Add signed URLs
+    await addSignedUrls(normalizedMedia);
 
     res.json({ media: normalizedMedia });
   } catch (error) {
@@ -324,10 +379,13 @@ router.get('/', async (req, res) => {
     // Normalize media data to match frontend expectations
     const normalizedMedia = result.rows.map(media => ({
       ...media,
-      media_type: media.media_type === 'MUSIC' ? 'audio' : media.media_type === 'VIDEO' ? 'video' : media.media_type,
+      media_type: media.media_type === 'MUSIC' ? 'audio' : media.media_type === 'VIDEO' ? 'video' : media.media_type === 'IMAGE' ? 'image' : media.media_type,
       likes: parseInt(media.likes) || 0,
       comments: parseInt(media.comments) || 0
     }));
+
+    // Add signed URLs
+    await addSignedUrls(normalizedMedia);
 
     res.json({
       media: normalizedMedia,
@@ -372,10 +430,16 @@ router.get('/:id', async (req, res) => {
     // Normalize media data to match frontend expectations
     const normalizedMedia = {
       ...result.rows[0],
-      media_type: result.rows[0].media_type === 'MUSIC' ? 'audio' : result.rows[0].media_type === 'VIDEO' ? 'video' : result.rows[0].media_type,
+      media_type: result.rows[0].media_type === 'MUSIC' ? 'audio' : result.rows[0].media_type === 'VIDEO' ? 'video' : result.rows[0].media_type === 'IMAGE' ? 'image' : result.rows[0].media_type,
       likes: parseInt(result.rows[0].likes) || 0,
       comments: parseInt(result.rows[0].comments) || 0
     };
+
+    // Add signed URL
+    const bucket = getBucketFromMediaType(result.rows[0].media_type);
+    if (bucket && normalizedMedia.file_path) {
+      normalizedMedia.signed_url = await generateSignedUrl(bucket, normalizedMedia.file_path);
+    }
 
     res.json({ media: normalizedMedia });
   } catch (error) {
@@ -400,6 +464,13 @@ router.post('/:id/download', async (req, res) => {
 
     const media = result.rows[0];
 
+    // Generate signed URL for download
+    const bucket = getBucketFromMediaType(media.media_type);
+    let signedUrl = null;
+    if (bucket && media.file_path) {
+      signedUrl = await generateSignedUrl(bucket, media.file_path);
+    }
+
     // Send download notification if user is authenticated and not the owner
     if (req.user && req.user.email && media.uploader_email !== req.user.email) {
       try {
@@ -418,7 +489,7 @@ router.post('/:id/download', async (req, res) => {
       }
     }
 
-    res.json({ file_path: media.file_path });
+    res.json({ download_url: signedUrl });
   } catch (error) {
     console.error('Error processing download:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -1073,11 +1144,16 @@ router.delete('/:id', authenticateToken, async (req, res) => {
 
     const media = mediaCheck.rows[0];
 
-    // Delete file if it exists
+    // Delete file from Supabase
     if (media.file_path) {
-      const filePath = path.join(__dirname, '../../', media.file_path);
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
+      const bucket = getBucketFromMediaType(media.media_type);
+      if (bucket) {
+        try {
+          await supabase.storage.from(bucket).remove([media.file_path]);
+        } catch (error) {
+          console.error('Error deleting from Supabase:', error);
+          // Continue with db delete even if storage delete fails
+        }
       }
     }
 
