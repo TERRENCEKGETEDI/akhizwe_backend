@@ -37,7 +37,7 @@ app.use(bodyParser.json());
 app.use('/api', routes);
 
 // Serve static files from uploads directory with proper headers and range support
-app.get('/uploads/:file(*)', (req, res) => {
+app.get('/:file(*)', (req, res) => {
   const filePath = path.join(__dirname, '../uploads', req.params.file);
   if (!fs.existsSync(filePath)) {
     return res.status(404).send('File not found');
