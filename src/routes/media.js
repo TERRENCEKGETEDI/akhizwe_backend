@@ -272,9 +272,9 @@ router.get('/', async (req, res) => {
     }
 
     // Add type filter
-    if (filter_type && ['audio', 'video'].includes(filter_type)) {
+    if (filter_type && ['audio', 'video', 'image'].includes(filter_type)) {
       // Normalize frontend format to database format
-      const dbMediaType = filter_type === 'audio' ? 'MUSIC' : 'VIDEO';
+      const dbMediaType = filter_type === 'audio' ? 'MUSIC' : filter_type === 'video' ? 'VIDEO' : 'IMAGE';
       whereClause += ` AND m.media_type = $${paramIndex}`;
       params.push(dbMediaType);
       paramIndex++;

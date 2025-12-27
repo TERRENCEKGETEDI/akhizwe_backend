@@ -6,8 +6,25 @@ class WebSocketService {
     constructor(server) {
         this.io = new Server(server, {
             cors: {
-                origin: process.env.FRONTEND_URL || "http://localhost:5173",
-                methods: ["GET", "POST"]
+                origin: function (origin, callback) {
+                    // Allow requests with no origin (like mobile apps or curl requests)
+                    if (!origin) return callback(null, true);
+
+                    const allowedOrigins = [
+                        process.env.FRONTEND_URL || "http://localhost:5173",
+                        'http://localhost:3000', // Development frontend
+                        'https://akhizwe-app.web.app' // Production frontend
+                    ];
+
+                    if (allowedOrigins.indexOf(origin) !== -1) {
+                        callback(null, true);
+                    } else {
+                        console.log(`WebSocket CORS blocked origin: ${origin}`);
+                        callback(new Error('Not allowed by CORS'));
+                    }
+                },
+                methods: ["GET", "POST"],
+                credentials: true
             }
         });
         
@@ -31,16 +48,20 @@ class WebSocketService {
     setupMiddleware() {
         // Authentication middleware
         this.io.use(async (socket, next) => {
+            console.log('WebSocket connection attempt - handshake auth:', socket.handshake.auth);
+            console.log('WebSocket connection attempt - headers:', socket.handshake.headers);
             try {
                 const token = socket.handshake.auth.token || socket.handshake.headers.authorization?.split(' ')[1];
-                
+                console.log('WebSocket token extracted:', token ? 'present' : 'missing');
+
                 if (!token) {
+                    console.error('WebSocket authentication failed: No token provided');
                     return next(new Error('Authentication error: No token provided'));
                 }
-                
+
                 const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret');
                 socket.user = decoded;
-                
+
                 console.log(`WebSocket authentication successful for user: ${decoded.email}`);
                 next();
             } catch (error) {
@@ -52,8 +73,16 @@ class WebSocketService {
     
     setupEventHandlers() {
         this.io.on('connection', (socket) => {
-            const userEmail = socket.user.email;
-            
+            console.log('WebSocket connection event triggered');
+            const userEmail = socket.user?.email;
+            console.log(`User attempting connection: ${userEmail || 'unknown'} (Socket ID: ${socket.id})`);
+
+            if (!socket.user) {
+                console.error('Connection failed: No user attached to socket');
+                socket.disconnect();
+                return;
+            }
+
             console.log(`User connected: ${userEmail} (Socket ID: ${socket.id})`);
             
             // Store user connection
