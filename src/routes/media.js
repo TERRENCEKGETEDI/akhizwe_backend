@@ -101,23 +101,33 @@ router.post('/upload', authenticateToken, upload.single('file'), async (req, res
 
     // Get user's full name and id to auto-populate artist field and for media_files
     const userResult = await pool.query('SELECT full_name, user_id FROM users WHERE email = $1', [req.user.email]);
-    const userFullName = userResult.rows[0]?.full_name || req.user.email; // Fallback to email if full_name is null
-    const userId = userResult.rows[0]?.user_id;
+    if (userResult.rows.length === 0) {
+      return res.status(400).json({ error: 'User not found' });
+    }
+    const userFullName = userResult.rows[0].full_name || req.user.email; // Fallback to email if full_name is null
+    const userId = userResult.rows[0].user_id;
 
     const media_id = uuidv4();
     const filePath = `${Date.now()}_${file.originalname}`;
 
     // Upload to Supabase
-    const { data, error } = await supabase.storage
-      .from(bucket)
-      .upload(filePath, file.buffer, {
-        contentType: file.mimetype,
-        upsert: false
-      });
+    let uploadData;
+    try {
+      const { data, error } = await supabase.storage
+        .from(bucket)
+        .upload(filePath, file.buffer, {
+          contentType: file.mimetype,
+          upsert: false
+        });
 
-    if (error) {
-      console.error('Supabase upload error:', error);
-      return res.status(500).json({ error: 'Failed to upload file' });
+      if (error) {
+        console.error('Supabase upload error:', error);
+        return res.status(500).json({ error: `Failed to upload file to ${bucket}: ${error.message}` });
+      }
+      uploadData = data;
+    } catch (supabaseError) {
+      console.error('Supabase client error:', supabaseError);
+      return res.status(500).json({ error: 'Storage service unavailable' });
     }
 
     const file_size = file.size;
