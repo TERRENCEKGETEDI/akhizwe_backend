@@ -431,6 +431,21 @@ router.get('/', async (req, res) => {
   }
 });
 
+// GET /media/notifications - Get user notifications
+router.get('/notifications', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM notifications WHERE user_email = $1 ORDER BY created_at DESC',
+      [req.user.email]
+    );
+
+    res.json({ notifications: result.rows });
+  } catch (error) {
+    console.error('Error fetching notifications:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /media/:id - Get media details and increment view_count
 router.get('/:id', async (req, res) => {
   try {
@@ -442,13 +457,13 @@ router.get('/:id', async (req, res) => {
     // Allow users to see details of their own media regardless of approval status
     const result = await pool.query(
       `SELECT m.*, u.full_name as creator_name,
-              COALESCE(like_count, 0) as likes,
-              COALESCE(comment_count, 0) as comments
-       FROM media m
-       JOIN users u ON m.uploader_email = u.email
-       LEFT JOIN (SELECT media_id, COUNT(*) as like_count FROM media_interactions WHERE interaction_type = 'LIKE' GROUP BY media_id) li ON m.media_id = li.media_id
-       LEFT JOIN (SELECT media_id, COUNT(*) as comment_count FROM media_comments GROUP BY media_id) mc ON m.media_id = mc.media_id
-       WHERE m.media_id = $1 AND (m.is_approved = true OR m.uploader_email = $2)`,
+               COALESCE(like_count, 0) as likes,
+               COALESCE(comment_count, 0) as comments
+        FROM media m
+        JOIN users u ON m.uploader_email = u.email
+        LEFT JOIN (SELECT media_id, COUNT(*) as like_count FROM media_interactions WHERE interaction_type = 'LIKE' GROUP BY media_id) li ON m.media_id = li.media_id
+        LEFT JOIN (SELECT media_id, COUNT(*) as comment_count FROM media_comments GROUP BY media_id) mc ON m.media_id = mc.media_id
+        WHERE m.media_id = $1 AND (m.is_approved = true OR m.uploader_email = $2)`,
       [id, req.user?.email || '']
     );
 
