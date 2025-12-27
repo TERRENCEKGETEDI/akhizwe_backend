@@ -434,12 +434,23 @@ router.get('/', async (req, res) => {
 // GET /media/notifications - Get user notifications
 router.get('/notifications', authenticateToken, async (req, res) => {
   try {
-    const result = await pool.query(
-      'SELECT * FROM notifications WHERE user_email = $1 ORDER BY created_at DESC',
-      [req.user.email]
+    const { page = 1, limit = 20, unread_only = false } = req.query;
+    const result = await NotificationService.getUserNotifications(
+      req.user.email,
+      parseInt(page),
+      parseInt(limit),
+      unread_only === 'true'
     );
 
-    res.json({ notifications: result.rows });
+    // Add a header to indicate if fallback notifications are being used
+    if (result.source && result.source.startsWith('fallback')) {
+      res.set('X-Notification-Source', result.source);
+      if (result.fallback_reason) {
+        res.set('X-Fallback-Reason', result.fallback_reason);
+      }
+    }
+
+    res.json(result);
   } catch (error) {
     console.error('Error fetching notifications:', error);
     res.status(500).json({ error: 'Internal server error' });

@@ -501,7 +501,7 @@ class NotificationService {
     }
 
     /**
-     * Get notifications from the main notifications table
+     * Get notifications from the main notifications table and ticket notifications
      */
     static async getNotificationsFromTable(email, page, limit, unreadOnly) {
         const offset = (page - 1) * limit;
@@ -512,27 +512,38 @@ class NotificationService {
             whereClause += ' AND is_read = false';
         }
 
-        const result = await pool.query(
-            `SELECT * FROM notifications 
-             WHERE ${whereClause}
-             ORDER BY created_at DESC 
-             LIMIT ${params.length + 1} OFFSET ${params.length + 2}`,
-            [...params, limit, offset]
-        );
+        // Query for notifications from both tables
+        const notificationsQuery = `
+            SELECT notification_id, user_email, notification_type, message, related_media_id, notification_channel, priority, actor_email, action_type, metadata, created_at, is_read
+            FROM notifications
+            WHERE ${whereClause}
+            UNION ALL
+            SELECT notification_id, user_email, notification_type::text, message, ticket_id as related_media_id, 'in_app' as notification_channel, 'normal' as priority, null as actor_email, 'TICKET' as action_type, json_build_object('transaction_ref', transaction_ref) as metadata, sent_at as created_at, false as is_read
+            FROM ticket_notifications
+            WHERE user_email = $1
+            ORDER BY created_at DESC
+            LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+        `;
 
-        // Get total count
-        const countResult = await pool.query(
-            `SELECT COUNT(*) FROM notifications WHERE ${whereClause}`,
-            params
-        );
+        const result = await pool.query(notificationsQuery, [...params, limit, offset]);
+
+        // Get total count from both tables
+        const countQuery = `
+            SELECT COUNT(*) as total FROM (
+                SELECT notification_id FROM notifications WHERE ${whereClause}
+                UNION ALL
+                SELECT notification_id FROM ticket_notifications WHERE user_email = $1
+            ) as combined
+        `;
+        const countResult = await pool.query(countQuery, params);
 
         return {
             notifications: result.rows,
             pagination: {
                 page: parseInt(page),
                 limit: parseInt(limit),
-                total: parseInt(countResult.rows[0].count),
-                pages: Math.ceil(parseInt(countResult.rows[0].count) / limit)
+                total: parseInt(countResult.rows[0].total),
+                pages: Math.ceil(parseInt(countResult.rows[0].total) / limit)
             }
         };
     }
