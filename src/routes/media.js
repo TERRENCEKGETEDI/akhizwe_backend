@@ -899,7 +899,7 @@ router.get('/:id/comments', async (req, res) => {
 
     console.log('DEBUG: Executing main comments query...');
     const result = await executeQueryWithRetry(
-      `SELECT mc.comment_id, mc.media_id, mc.user_email, mc.comment as comment_text, mc.parent_comment_id, mc.created_at, mc.updated_at, u.full_name as commenter_name,
+      `SELECT mc.comment_id, mc.media_id, mc.user_email, mc.comment as comment_text, mc.parent_comment_id, mc.created_at, u.full_name as commenter_name,
               COALESCE(cl.like_count, 0) as likes,
               COALESCE(reply_count.reply_count, 0) as reply_count
        FROM media_comments mc
@@ -917,7 +917,7 @@ router.get('/:id/comments', async (req, res) => {
     const commentsWithReplies = await Promise.all(result.rows.map(async (comment) => {
       console.log('DEBUG: Fetching replies for comment:', comment.comment_id);
       const repliesResult = await executeQueryWithRetry(
-        `SELECT mc.comment_id, mc.media_id, mc.user_email, mc.comment as comment_text, mc.parent_comment_id, mc.created_at, mc.updated_at, u.full_name as commenter_name,
+        `SELECT mc.comment_id, mc.media_id, mc.user_email, mc.comment as comment_text, mc.parent_comment_id, mc.created_at, u.full_name as commenter_name,
                 COALESCE(cl.like_count, 0) as likes
          FROM media_comments mc
          JOIN users u ON mc.user_email = u.email
