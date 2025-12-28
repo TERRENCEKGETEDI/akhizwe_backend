@@ -171,6 +171,33 @@ router.get('/denominations', (req, res) => {
   res.json({ denominations });
 });
 
+// GET /airtime-data/balance - Fetch fresh user balance data from database
+router.get('/balance', async (req, res) => {
+  try {
+    const userEmail = req.user.email;
+    
+    const result = await pool.query(
+      'SELECT wallet_balance, airtime_balance, data_balance, phone FROM users WHERE email = $1',
+      [userEmail]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    const user = result.rows[0];
+    res.json({
+      wallet_balance: parseFloat(user.wallet_balance || 0),
+      airtime_balance: parseFloat(user.airtime_balance || 0),
+      data_balance: parseFloat(user.data_balance || 0),
+      phone: user.phone
+    });
+  } catch (error) {
+    console.error('Get balance error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // POST /airtime-data/buy-airtime
 router.post('/buy-airtime', async (req, res) => {
   try {
