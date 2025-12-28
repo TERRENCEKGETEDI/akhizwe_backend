@@ -12,6 +12,9 @@ const { initialize: initializeWebSocket } = require('./services/websocketService
 const app = express();
 const server = http.createServer(app);
 
+// Trust proxy for Cloudflare and other reverse proxies
+app.set("trust proxy", 1);
+
 const corsOptions = {
   origin: function (origin, callback) {
     // Allow requests with no origin (like mobile apps or curl requests)
