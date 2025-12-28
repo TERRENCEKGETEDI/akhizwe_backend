@@ -90,17 +90,18 @@ router.post('/login', loginRateLimiter, async (req, res) => {
       return res.status(403).json({ message: 'Account is blocked' });
     }
 
-    const token = jwt.sign({ email: user.email, role: user.role, phone: user.phone, wallet_balance: user.wallet_balance, daily_airtime_limit: user.daily_airtime_limit, airtime_balance: user.airtime_balance, data_balance: user.data_balance }, JWT_SECRET, { expiresIn: '1h' });
+    const token = jwt.sign({ 
+      email: user.email, 
+      role: user.role, 
+      phone: user.phone 
+    }, JWT_SECRET, { expiresIn: '1h' });
     res.json({
       token,
       user: {
         email: user.email,
         full_name: user.full_name,
         role: user.role,
-        wallet_balance: user.wallet_balance,
-        daily_airtime_limit: user.daily_airtime_limit,
-        phone: user.phone,
-        data_balance: user.data_balance
+        phone: user.phone
       }
     });
   } catch (error) {
