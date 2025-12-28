@@ -774,7 +774,7 @@ router.post('/:id/comment', authenticateToken, async (req, res) => {
     const media = mediaCheck.rows[0];
     const comment_id = uuidv4();
     await pool.query(
-      'INSERT INTO media_comments (comment_id, media_id, user_email, comment_text) VALUES ($1, $2, $3, $4)',
+      'INSERT INTO media_comments (comment_id, media_id, user_email, comment) VALUES ($1, $2, $3, $4)',
       [comment_id, id, req.user.email, comment_text.trim()]
     );
 
@@ -899,7 +899,7 @@ router.get('/:id/comments', async (req, res) => {
 
     console.log('DEBUG: Executing main comments query...');
     const result = await executeQueryWithRetry(
-      `SELECT mc.comment_id, mc.media_id, mc.user_email, mc.comment_text as comment_text, mc.parent_comment_id, mc.created_at, mc.updated_at, u.full_name as commenter_name,
+      `SELECT mc.comment_id, mc.media_id, mc.user_email, mc.comment as comment_text, mc.parent_comment_id, mc.created_at, mc.updated_at, u.full_name as commenter_name,
               COALESCE(cl.like_count, 0) as likes,
               COALESCE(reply_count.reply_count, 0) as reply_count
        FROM media_comments mc
@@ -917,7 +917,7 @@ router.get('/:id/comments', async (req, res) => {
     const commentsWithReplies = await Promise.all(result.rows.map(async (comment) => {
       console.log('DEBUG: Fetching replies for comment:', comment.comment_id);
       const repliesResult = await executeQueryWithRetry(
-        `SELECT mc.comment_id, mc.media_id, mc.user_email, mc.comment_text as comment_text, mc.parent_comment_id, mc.created_at, mc.updated_at, u.full_name as commenter_name,
+        `SELECT mc.comment_id, mc.media_id, mc.user_email, mc.comment as comment_text, mc.parent_comment_id, mc.created_at, mc.updated_at, u.full_name as commenter_name,
                 COALESCE(cl.like_count, 0) as likes
          FROM media_comments mc
          JOIN users u ON mc.user_email = u.email
@@ -990,7 +990,7 @@ router.post('/:id/comment/:comment_id/reply', authenticateToken, async (req, res
     const parentComment = commentCheck.rows[0];
     const reply_id = uuidv4();
     await pool.query(
-      'INSERT INTO media_comments (comment_id, media_id, user_email, comment_text, parent_comment_id) VALUES ($1, $2, $3, $4, $5)',
+      'INSERT INTO media_comments (comment_id, media_id, user_email, comment, parent_comment_id) VALUES ($1, $2, $3, $4, $5)',
       [reply_id, id, req.user.email, reply_text.trim(), comment_id]
     );
 
