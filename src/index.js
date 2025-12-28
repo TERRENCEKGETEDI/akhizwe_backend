@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
+const helmet = require('helmet');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
@@ -11,6 +12,12 @@ const { initialize: initializeWebSocket } = require('./services/websocketService
 
 const app = express();
 const server = http.createServer(app);
+
+// Security: Remove Express fingerprinting header
+app.disable('x-powered-by');
+
+// Security: Apply Helmet for comprehensive protection
+app.use(helmet());
 
 // Trust proxy for Cloudflare and other reverse proxies
 app.set("trust proxy", 1);
