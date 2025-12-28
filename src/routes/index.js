@@ -5,6 +5,7 @@ const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 const pool = require('../db');
 const { loginRateLimiter } = require('../middleware/loginRateLimit');
+const { authMiddleware } = require('../middleware/auth');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret';
 
@@ -128,5 +129,13 @@ router.use('/media', mediaRoutes);
 
 // Mount notifications routes
 router.use('/notifications', notificationsRoutes);
+
+// Protected test route
+router.get('/protected', authMiddleware, (req, res) => {
+  res.json({
+    message: "Access granted",
+    user: req.user
+  });
+});
 
 module.exports = router;
