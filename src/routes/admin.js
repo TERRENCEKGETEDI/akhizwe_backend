@@ -1,12 +1,21 @@
 const express = require('express');
-const { authenticateToken, requireAdmin } = require('../middleware/auth');
+const { authMiddleware } = require('../middleware/auth');
 const pool = require('../db');
 const { v4: uuidv4 } = require('uuid'); // for log_id if needed
 
 const router = express.Router();
 
 // Middleware for all admin routes
-router.use(authenticateToken);
+router.use(authMiddleware);
+
+// Simple admin check middleware
+const requireAdmin = (req, res, next) => {
+  if (req.user.role !== 'ADMIN' && req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  next();
+};
+
 router.use(requireAdmin);
 
 // Helper function to log admin actions

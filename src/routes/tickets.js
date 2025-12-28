@@ -1,5 +1,5 @@
 const express = require('express');
-const { authenticateToken, requireAdmin } = require('../middleware/auth');
+const { authMiddleware } = require('../middleware/auth');
 const pool = require('../db');
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
@@ -8,7 +8,15 @@ const qrcode = require('qrcode');
 const router = express.Router();
 
 // Middleware for all ticket routes
-router.use(authenticateToken);
+router.use(authMiddleware);
+
+// Simple admin check middleware
+const requireAdmin = (req, res, next) => {
+  if (req.user.role !== 'ADMIN' && req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  next();
+};
 
 // Helper function to get system settings
 const getSystemSetting = async (settingKey) => {

@@ -1,5 +1,5 @@
 const express = require('express');
-const { authenticateToken } = require('../middleware/auth');
+const { authMiddleware } = require('../middleware/auth');
 const pool = require('../db');
 const { v4: uuidv4 } = require('uuid');
 const multer = require('multer');
@@ -90,7 +90,7 @@ const upload = multer({
 });
 
 // POST /media/upload - Upload media (authenticated users only)
-router.post('/upload', authenticateToken, upload.single('file'), async (req, res) => {
+router.post('/upload', authMiddleware, upload.single('file'), async (req, res) => {
   try {
     const { title, description, media_type, category, release_date } = req.body;
     const file = req.file;
@@ -182,7 +182,7 @@ router.post('/upload', authenticateToken, upload.single('file'), async (req, res
 });
 
 // GET /media/my - Get user's own media (must come before :id route)
-router.get('/my', authenticateToken, async (req, res) => {
+router.get('/my', authMiddleware, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT m.*, u.full_name as creator_name,
@@ -216,7 +216,7 @@ router.get('/my', authenticateToken, async (req, res) => {
 });
 
 // GET /media/liked - Get user's liked media IDs
-router.get('/liked', authenticateToken, async (req, res) => {
+router.get('/liked', authMiddleware, async (req, res) => {
   try {
     console.log(`Fetching liked media for user: ${req.user.email}`);
 
@@ -240,7 +240,7 @@ router.get('/liked', authenticateToken, async (req, res) => {
 });
 
 // GET /media/favorites - Get user's favorited media (must come before :id route)
-router.get('/favorites', authenticateToken, async (req, res) => {
+router.get('/favorites', authMiddleware, async (req, res) => {
   try {
     console.log(`Fetching favorites for user: ${req.user.email}`);
 
@@ -264,7 +264,7 @@ router.get('/favorites', authenticateToken, async (req, res) => {
 });
 
 // GET /media/pending - Get pending media (admin only)
-router.get('/pending', authenticateToken, async (req, res) => {
+router.get('/pending', authMiddleware, async (req, res) => {
   try {
     // Check if user is admin
     if (req.user.role !== 'ADMIN') {
@@ -465,7 +465,7 @@ router.get('/', async (req, res) => {
 });
 
 // GET /media/notifications - Get user notifications
-router.get('/notifications', authenticateToken, async (req, res) => {
+router.get('/notifications', authMiddleware, async (req, res) => {
   try {
     const { page = 1, limit = 20, unread_only = false } = req.query;
     const result = await NotificationService.getUserNotifications(
@@ -585,7 +585,7 @@ router.post('/:id/download', async (req, res) => {
 });
 
 // POST /media/:id/like - Add/update LIKE interaction
-router.post('/:id/like', authenticateToken, async (req, res) => {
+router.post('/:id/like', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
     console.log(`Like request for media ${id} by user ${req.user.email}`);
@@ -638,7 +638,7 @@ router.post('/:id/like', authenticateToken, async (req, res) => {
 });
 
 // DELETE /media/:id/like - Remove LIKE interaction
-router.delete('/:id/like', authenticateToken, async (req, res) => {
+router.delete('/:id/like', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
     console.log(`Unlike request for media ${id} by user ${req.user.email}`);
@@ -669,7 +669,7 @@ router.delete('/:id/like', authenticateToken, async (req, res) => {
 });
 
 // POST /media/:id/favorite - Add/update FAVORITE interaction
-router.post('/:id/favorite', authenticateToken, async (req, res) => {
+router.post('/:id/favorite', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
     console.log(`Favorite request for media ${id} by user ${req.user.email}`);
@@ -722,7 +722,7 @@ router.post('/:id/favorite', authenticateToken, async (req, res) => {
 });
 
 // DELETE /media/:id/favorite - Remove FAVORITE interaction
-router.delete('/:id/favorite', authenticateToken, async (req, res) => {
+router.delete('/:id/favorite', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
     console.log(`Unfavorite request for media ${id} by user ${req.user.email}`);
@@ -753,7 +753,7 @@ router.delete('/:id/favorite', authenticateToken, async (req, res) => {
 });
 
 // POST /media/:id/comment - Add comment
-router.post('/:id/comment', authenticateToken, async (req, res) => {
+router.post('/:id/comment', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
     const { comment_text } = req.body;
@@ -806,7 +806,7 @@ router.post('/:id/comment', authenticateToken, async (req, res) => {
 });
 
 // DELETE /media/comment/:comment_id - Delete comment
-router.delete('/comment/:comment_id', authenticateToken, async (req, res) => {
+router.delete('/comment/:comment_id', authMiddleware, async (req, res) => {
   try {
     const { comment_id } = req.params;
     console.log(`Delete comment request for comment ${comment_id} by user ${req.user.email}`);
@@ -960,7 +960,7 @@ router.get('/:id/comments', async (req, res) => {
 });
 
 // POST /media/:id/comment/:comment_id/reply - Add reply to comment
-router.post('/:id/comment/:comment_id/reply', authenticateToken, async (req, res) => {
+router.post('/:id/comment/:comment_id/reply', authMiddleware, async (req, res) => {
   try {
     const { id, comment_id } = req.params;
     const { reply_text } = req.body;
@@ -1026,7 +1026,7 @@ router.post('/:id/comment/:comment_id/reply', authenticateToken, async (req, res
 });
 
 // DELETE /media/reply/:reply_id - Delete reply
-router.delete('/reply/:reply_id', authenticateToken, async (req, res) => {
+router.delete('/reply/:reply_id', authMiddleware, async (req, res) => {
   try {
     const { reply_id } = req.params;
     console.log(`Delete reply request for reply ${reply_id} by user ${req.user.email}`);
@@ -1050,7 +1050,7 @@ router.delete('/reply/:reply_id', authenticateToken, async (req, res) => {
 });
 
 // POST /media/comment/:comment_id/like - Like a comment
-router.post('/comment/:comment_id/like', authenticateToken, async (req, res) => {
+router.post('/comment/:comment_id/like', authMiddleware, async (req, res) => {
   try {
     const { comment_id } = req.params;
     console.log(`Like request for comment ${comment_id} by user ${req.user.email}`);
@@ -1079,7 +1079,7 @@ router.post('/comment/:comment_id/like', authenticateToken, async (req, res) => 
 });
 
 // DELETE /media/comment/:comment_id/like - Unlike a comment
-router.delete('/comment/:comment_id/like', authenticateToken, async (req, res) => {
+router.delete('/comment/:comment_id/like', authMiddleware, async (req, res) => {
   try {
     const { comment_id } = req.params;
     console.log(`Unlike request for comment ${comment_id} by user ${req.user.email}`);
@@ -1110,7 +1110,7 @@ router.delete('/comment/:comment_id/like', authenticateToken, async (req, res) =
 });
 
 // POST /media/:id/report - Report media
-router.post('/:id/report', authenticateToken, async (req, res) => {
+router.post('/:id/report', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
     const { reason } = req.body;
@@ -1141,7 +1141,7 @@ router.post('/:id/report', authenticateToken, async (req, res) => {
 // NOTE: /media/my route moved above :id route to prevent route matching issues
 
 // GET /media/reports - Get media reports (admin only)
-router.get('/reports', authenticateToken, async (req, res) => {
+router.get('/reports', authMiddleware, async (req, res) => {
   try {
     // Check if user is admin
     if (req.user.role !== 'ADMIN') {
@@ -1165,7 +1165,7 @@ router.get('/reports', authenticateToken, async (req, res) => {
 });
 
 // GET /media/notifications - Get user notifications
-router.get('/notifications', authenticateToken, async (req, res) => {
+router.get('/notifications', authMiddleware, async (req, res) => {
   try {
     const result = await pool.query(
       'SELECT * FROM notifications WHERE user_email = $1 ORDER BY created_at DESC',
@@ -1180,7 +1180,7 @@ router.get('/notifications', authenticateToken, async (req, res) => {
 });
 
 // GET /media/analytics - Get media analytics (admin only)
-router.get('/analytics', authenticateToken, async (req, res) => {
+router.get('/analytics', authMiddleware, async (req, res) => {
   try {
     // Check if user is admin
     if (req.user.role !== 'ADMIN') {
@@ -1226,7 +1226,7 @@ router.get('/analytics', authenticateToken, async (req, res) => {
 });
 
 // POST /media/:id/approve - Approve media (admin only)
-router.post('/:id/approve', authenticateToken, async (req, res) => {
+router.post('/:id/approve', authMiddleware, async (req, res) => {
   try {
     // Check if user is admin
     if (req.user.role !== 'ADMIN') {
@@ -1259,7 +1259,7 @@ router.post('/:id/approve', authenticateToken, async (req, res) => {
 });
 
 // POST /media/:id/reject - Reject media (admin only)
-router.post('/:id/reject', authenticateToken, async (req, res) => {
+router.post('/:id/reject', authMiddleware, async (req, res) => {
   try {
     // Check if user is admin
     if (req.user.role !== 'ADMIN') {
@@ -1292,7 +1292,7 @@ router.post('/:id/reject', authenticateToken, async (req, res) => {
 });
 
 // DELETE /media/:id - Delete user's own media
-router.delete('/:id', authenticateToken, async (req, res) => {
+router.delete('/:id', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -1328,7 +1328,7 @@ router.delete('/:id', authenticateToken, async (req, res) => {
 });
 
 // POST /media/reports/:report_id/resolve - Resolve report (admin only)
-router.post('/reports/:report_id/resolve', authenticateToken, async (req, res) => {
+router.post('/reports/:report_id/resolve', authMiddleware, async (req, res) => {
   try {
     // Check if user is admin
     if (req.user.role !== 'ADMIN') {
@@ -1350,7 +1350,7 @@ router.post('/reports/:report_id/resolve', authenticateToken, async (req, res) =
 });
 
 // POST /media/notifications/:notification_id/read - Mark notification as read
-router.post('/notifications/:notification_id/read', authenticateToken, async (req, res) => {
+router.post('/notifications/:notification_id/read', authMiddleware, async (req, res) => {
   try {
     const { notification_id } = req.params;
 

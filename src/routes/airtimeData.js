@@ -1,5 +1,5 @@
 const express = require('express');
-const { authenticateToken } = require('../middleware/auth');
+const { authMiddleware } = require('../middleware/auth');
 const pool = require('../db');
 const { v4: uuidv4 } = require('uuid');
 const bcrypt = require('bcryptjs');
@@ -7,7 +7,7 @@ const bcrypt = require('bcryptjs');
 const router = express.Router();
 
 // Middleware for all routes
-router.use(authenticateToken);
+router.use(authMiddleware);
 
 // Helper function to log errors
 const logError = async (action, details) => {

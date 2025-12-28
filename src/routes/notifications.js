@@ -1,11 +1,11 @@
 const express = require('express');
-const { authenticateToken } = require('../middleware/auth');
+const { authMiddleware } = require('../middleware/auth');
 const NotificationService = require('../services/notificationService');
 
 const router = express.Router();
 
 // GET /notifications/preferences - Get user's notification preferences
-router.get('/preferences', authenticateToken, async (req, res) => {
+router.get('/preferences', authMiddleware, async (req, res) => {
     try {
         const preferences = await NotificationService.getUserPreferences(req.user.email);
         res.json({ preferences });
@@ -16,7 +16,7 @@ router.get('/preferences', authenticateToken, async (req, res) => {
 });
 
 // PUT /notifications/preferences - Update user's notification preferences
-router.put('/preferences', authenticateToken, async (req, res) => {
+router.put('/preferences', authMiddleware, async (req, res) => {
     try {
         const preferences = await NotificationService.updateUserPreferences(req.user.email, req.body);
         res.json({ 
@@ -30,7 +30,7 @@ router.put('/preferences', authenticateToken, async (req, res) => {
 });
 
 // GET /notifications - Get user's notifications with pagination
-router.get('/', authenticateToken, async (req, res) => {
+router.get('/', authMiddleware, async (req, res) => {
     try {
         const { page = 1, limit = 20, unread_only = false } = req.query;
         const result = await NotificationService.getUserNotifications(
@@ -56,7 +56,7 @@ router.get('/', authenticateToken, async (req, res) => {
 });
 
 // GET /notifications/unread-count - Get unread notification count
-router.get('/unread-count', authenticateToken, async (req, res) => {
+router.get('/unread-count', authMiddleware, async (req, res) => {
     try {
         const count = await NotificationService.getUnreadCount(req.user.email);
         res.json({ unread_count: count });
@@ -67,7 +67,7 @@ router.get('/unread-count', authenticateToken, async (req, res) => {
 });
 
 // POST /notifications/:notification_id/read - Mark notification as read
-router.post('/:notification_id/read', authenticateToken, async (req, res) => {
+router.post('/:notification_id/read', authMiddleware, async (req, res) => {
     try {
         const { notification_id } = req.params;
         const { channel = 'in_app' } = req.body;
@@ -89,7 +89,7 @@ router.post('/:notification_id/read', authenticateToken, async (req, res) => {
 });
 
 // POST /notifications/read-all - Mark all notifications as read
-router.post('/read-all', authenticateToken, async (req, res) => {
+router.post('/read-all', authMiddleware, async (req, res) => {
     try {
         await NotificationService.markAllAsRead(req.user.email);
         res.json({ message: 'All notifications marked as read' });
@@ -100,7 +100,7 @@ router.post('/read-all', authenticateToken, async (req, res) => {
 });
 
 // DELETE /notifications/:notification_id - Delete notification
-router.delete('/:notification_id', authenticateToken, async (req, res) => {
+router.delete('/:notification_id', authMiddleware, async (req, res) => {
     try {
         const { notification_id } = req.params;
         
