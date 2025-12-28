@@ -39,6 +39,39 @@ async function addSignedUrls(mediaArray) {
   return mediaArray;
 }
 
+// Helper function to execute query with retry logic
+async function executeQueryWithRetry(query, params, maxRetries = 3) {
+  let lastError;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`DEBUG: Query attempt ${attempt}/${maxRetries}`);
+      const result = await pool.query(query, params);
+      console.log(`DEBUG: Query attempt ${attempt} successful`);
+      return result;
+    } catch (error) {
+      console.error(`DEBUG: Query attempt ${attempt} failed:`, error.message);
+      lastError = error;
+      
+      // Don't retry on certain errors
+      if (error.message.includes('syntax error') || 
+          error.message.includes('relation') && error.message.includes('does not exist') ||
+          error.message.includes('column') && error.message.includes('does not exist')) {
+        break;
+      }
+      
+      // Wait before retry (exponential backoff)
+      if (attempt < maxRetries) {
+        const delay = Math.pow(2, attempt - 1) * 1000; // 1s, 2s, 4s
+        console.log(`DEBUG: Waiting ${delay}ms before retry...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+  
+  throw lastError;
+}
+
 const router = express.Router();
 
 // Configure multer for file uploads (memory storage for Supabase)
@@ -803,9 +836,69 @@ router.get('/:id/comments', async (req, res) => {
     const { page = 1, limit = 20 } = req.query;
     const offset = (page - 1) * limit;
 
-    console.log('Fetching comments for media ID:', id);
-    console.log('Query parameters:', { page, limit, offset });
-    const result = await pool.query(
+    console.log('=== DEBUG: Fetching comments for media ID:', id);
+    console.log('DEBUG: Query parameters:', { page, limit, offset });
+    console.log('DEBUG: Database connection test...');
+
+    // Test database connection first with retry
+    try {
+      const connectionTest = await executeQueryWithRetry('SELECT 1 as test', []);
+      console.log('DEBUG: Database connection successful');
+    } catch (connError) {
+      console.error('DEBUG: Database connection failed:', connError);
+      return res.status(500).json({ 
+        error: 'Database connection failed after retries', 
+        details: connError.message,
+        suggestion: 'The database may be temporarily unavailable. Please try again in a moment.'
+      });
+    }
+
+    // Test if required tables exist
+    console.log('DEBUG: Checking if required tables exist...');
+    try {
+      const tablesCheck = await executeQueryWithRetry(`
+        SELECT table_name 
+        FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name IN ('media_comments', 'users', 'comment_likes')
+      `, []);
+      console.log('DEBUG: Found tables:', tablesCheck.rows.map(r => r.table_name));
+      
+      const missingTables = [];
+      const requiredTables = ['media_comments', 'users', 'comment_likes'];
+      for (const table of requiredTables) {
+        if (!tablesCheck.rows.find(r => r.table_name === table)) {
+          missingTables.push(table);
+        }
+      }
+      
+      if (missingTables.length > 0) {
+        console.error('DEBUG: Missing tables:', missingTables);
+        return res.status(500).json({ 
+          error: 'Required tables missing from database', 
+          details: `Missing tables: ${missingTables.join(', ')}` 
+        });
+      }
+    } catch (tablesError) {
+      console.error('DEBUG: Error checking tables:', tablesError);
+      return res.status(500).json({ error: 'Failed to check table existence', details: tablesError.message });
+    }
+
+    // Test if media exists
+    console.log('DEBUG: Checking if media exists...');
+    try {
+      const mediaCheck = await executeQueryWithRetry('SELECT media_id FROM media WHERE media_id = $1', [id]);
+      console.log('DEBUG: Media exists:', mediaCheck.rows.length > 0);
+      if (mediaCheck.rows.length === 0) {
+        return res.status(404).json({ error: 'Media not found' });
+      }
+    } catch (mediaError) {
+      console.error('DEBUG: Error checking media:', mediaError);
+      return res.status(500).json({ error: 'Failed to check media existence', details: mediaError.message });
+    }
+
+    console.log('DEBUG: Executing main comments query...');
+    const result = await executeQueryWithRetry(
       `SELECT mc.comment_id, mc.media_id, mc.user_email, mc.comment_text as comment_text, mc.parent_comment_id, mc.created_at, mc.updated_at, u.full_name as commenter_name,
               COALESCE(cl.like_count, 0) as likes,
               COALESCE(reply_count.reply_count, 0) as reply_count
@@ -818,11 +911,12 @@ router.get('/:id/comments', async (req, res) => {
        LIMIT $2 OFFSET $3`,
       [id, limit, offset]
     );
-    console.log('Comments fetched:', result.rows.length);
+    console.log('DEBUG: Comments fetched:', result.rows.length);
 
     // Get replies for each comment
     const commentsWithReplies = await Promise.all(result.rows.map(async (comment) => {
-      const repliesResult = await pool.query(
+      console.log('DEBUG: Fetching replies for comment:', comment.comment_id);
+      const repliesResult = await executeQueryWithRetry(
         `SELECT mc.comment_id, mc.media_id, mc.user_email, mc.comment_text as comment_text, mc.parent_comment_id, mc.created_at, mc.updated_at, u.full_name as commenter_name,
                 COALESCE(cl.like_count, 0) as likes
          FROM media_comments mc
@@ -832,6 +926,7 @@ router.get('/:id/comments', async (req, res) => {
          ORDER BY mc.created_at ASC`,
         [comment.comment_id]
       );
+      console.log('DEBUG: Replies for comment', comment.comment_id, ':', repliesResult.rows.length);
       return {
         ...comment,
         replies: repliesResult.rows
@@ -839,9 +934,12 @@ router.get('/:id/comments', async (req, res) => {
     }));
 
     // Get total count
-    const countResult = await pool.query('SELECT COUNT(*) FROM media_comments WHERE media_id = $1 AND parent_comment_id IS NULL', [id]);
+    console.log('DEBUG: Getting total count...');
+    const countResult = await executeQueryWithRetry('SELECT COUNT(*) FROM media_comments WHERE media_id = $1 AND parent_comment_id IS NULL', [id]);
     const total = parseInt(countResult.rows[0].count);
+    console.log('DEBUG: Total comments count:', total);
 
+    console.log('DEBUG: Successfully fetched comments, sending response');
     res.json({
       comments: commentsWithReplies,
       pagination: {
@@ -852,7 +950,11 @@ router.get('/:id/comments', async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error fetching comments:', error);
+    console.error('=== ERROR: Error fetching comments ===');
+    console.error('Error name:', error.name);
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
+    console.error('=== END ERROR ===');
     res.status(500).json({ error: 'Internal server error', details: error.message });
   }
 });

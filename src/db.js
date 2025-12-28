@@ -18,8 +18,13 @@ const pool = new Pool({
   password: process.env.DB_PASSWORD || '123',
   max: 20,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
-  ssl: process.env.DB_SSL === 'false' ? false : { rejectUnauthorized: false }
+  connectionTimeoutMillis: 10000, // Increased from 2s to 10s for remote connections
+  ssl: process.env.DB_SSL === 'false' ? false : { rejectUnauthorized: false },
+  // Add connection retry logic
+  statement_timeout: 30000, // 30 second statement timeout
+  query_timeout: 30000, // 30 second query timeout
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 10000
 });
 
 pool.on('connect', () => {
