@@ -741,7 +741,7 @@ router.post('/:id/comment', authenticateToken, async (req, res) => {
     const media = mediaCheck.rows[0];
     const comment_id = uuidv4();
     await pool.query(
-      'INSERT INTO media_comments (comment_id, media_id, user_email, comment) VALUES ($1, $2, $3, $4)',
+      'INSERT INTO media_comments (comment_id, media_id, user_email, comment_text) VALUES ($1, $2, $3, $4)',
       [comment_id, id, req.user.email, comment_text.trim()]
     );
 
@@ -803,8 +803,10 @@ router.get('/:id/comments', async (req, res) => {
     const { page = 1, limit = 20 } = req.query;
     const offset = (page - 1) * limit;
 
+    console.log('Fetching comments for media ID:', id);
+    console.log('Query parameters:', { page, limit, offset });
     const result = await pool.query(
-      `SELECT mc.comment_id, mc.media_id, mc.user_email, mc.comment as comment_text, mc.parent_comment_id, mc.created_at, mc.updated_at, u.full_name as commenter_name,
+      `SELECT mc.comment_id, mc.media_id, mc.user_email, mc.comment_text as comment_text, mc.parent_comment_id, mc.created_at, mc.updated_at, u.full_name as commenter_name,
               COALESCE(cl.like_count, 0) as likes,
               COALESCE(reply_count.reply_count, 0) as reply_count
        FROM media_comments mc
@@ -816,11 +818,12 @@ router.get('/:id/comments', async (req, res) => {
        LIMIT $2 OFFSET $3`,
       [id, limit, offset]
     );
+    console.log('Comments fetched:', result.rows.length);
 
     // Get replies for each comment
     const commentsWithReplies = await Promise.all(result.rows.map(async (comment) => {
       const repliesResult = await pool.query(
-        `SELECT mc.comment_id, mc.media_id, mc.user_email, mc.comment as comment_text, mc.parent_comment_id, mc.created_at, mc.updated_at, u.full_name as commenter_name,
+        `SELECT mc.comment_id, mc.media_id, mc.user_email, mc.comment_text as comment_text, mc.parent_comment_id, mc.created_at, mc.updated_at, u.full_name as commenter_name,
                 COALESCE(cl.like_count, 0) as likes
          FROM media_comments mc
          JOIN users u ON mc.user_email = u.email
@@ -850,7 +853,7 @@ router.get('/:id/comments', async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching comments:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: 'Internal server error', details: error.message });
   }
 });
 
