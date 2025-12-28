@@ -88,8 +88,15 @@ router.get('/bundles/:network', async (req, res) => {
     }
     const networkId = networkResult.rows[0].network_id;
 
-    const bundlesResult = await pool.query('SELECT bundle_id, name, data_size, price, validity_days, regional_availability FROM data_bundles WHERE network_id = $1 AND enabled = TRUE', [networkId]);
-    res.json({ bundles: bundlesResult.rows });
+    const bundlesResult = await pool.query('SELECT bundle_id, name, data_size, price, enabled FROM data_bundles WHERE network_id = $1 AND enabled = TRUE', [networkId]);
+    
+    // Add default values for missing columns
+    const bundles = bundlesResult.rows.map(bundle => ({
+      ...bundle,
+      validity_days: 30, // Default value
+      regional_availability: 'National' // Default value
+    }));
+    res.json({ bundles });
   } catch (error) {
     console.error('Get bundles error:', error);
     res.status(500).json({ error: 'Internal server error' });
