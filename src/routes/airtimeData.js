@@ -219,7 +219,7 @@ router.post('/buy-airtime', async (req, res) => {
 
     // Get user details
     const userResult = await pool.query(
-      'SELECT wallet_balance, pin, phone_number FROM users WHERE email = $1',
+      'SELECT wallet_balance, pin, phone FROM users WHERE email = $1',
       [userEmail]
     );
     if (userResult.rows.length === 0) {
