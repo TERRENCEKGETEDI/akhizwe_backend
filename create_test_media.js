@@ -1,137 +1,118 @@
-// Simple script to populate database with test media data
 const { Pool } = require('pg');
 require('dotenv').config();
 
 const pool = new Pool({
-  host: process.env.DB_HOST,
-  port: process.env.DB_PORT,
-  database: process.env.DB_NAME,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
 
-const { v4: uuidv4 } = require('uuid');
-
 async function createTestMedia() {
-  console.log('Creating test media data...\n');
-
+  const client = await pool.connect();
+  
   try {
-    // First, let's check if we have any users to associate media with
-    const usersResult = await pool.query('SELECT email FROM users LIMIT 2');
-    console.log(`Found ${usersResult.rows.length} users in database`);
+    console.log('Creating test media for approval system...');
     
-    if (usersResult.rows.length === 0) {
-      console.log('❌ No users found. Please create users first.');
-      return;
-    }
-
-    const user1 = usersResult.rows[0].email;
-    const user2 = usersResult.rows.length > 1 ? usersResult.rows[1].email : user1;
-
-    console.log(`Using users: ${user1} and ${user2}\n`);
-
-    // Create test videos
-    const videoFiles = [
+    // Create 3 unapproved media items for testing
+    const testMedia = [
       {
-        title: 'Amapiano Dance Video',
-        description: 'Amazing amapiano dance performance',
-        artist: 'Dance Artist',
-        category: 'Dance'
+        media_id: 'test-pending-1',
+        uploader_email: 'test@akhizwe.technologies',
+        media_type: 'video',
+        title: 'Pending Video Test 1',
+        file_url: 'test_video_1.mp4',
+        file_path: 'test_video_1.mp4',
+        file_size: 1024000,
+        is_approved: false,
+        uploaded_at: new Date(),
+        copyright_declared: true,
+        monetization_enabled: false,
+        description: 'Test video pending approval',
+        artist: 'Test Artist',
+        category: 'test',
+        creator_name: 'Test Artist',
+        release_date: new Date(),
+        view_count: 0,
+        download_count: 0
       },
       {
-        title: 'Summer Vibes Music Video',
-        description: 'Fun summer music video with great beats',
-        artist: 'Summer Artist',
-        category: 'Music'
+        media_id: 'test-pending-2',
+        uploader_email: 'test@akhizwe.technologies',
+        media_type: 'audio',
+        title: 'Pending Audio Test 2',
+        file_url: 'test_audio_2.mp3',
+        file_path: 'test_audio_2.mp3',
+        file_size: 2048000,
+        is_approved: false,
+        uploaded_at: new Date(),
+        copyright_declared: true,
+        monetization_enabled: false,
+        description: 'Test audio pending approval',
+        artist: 'Test Artist',
+        category: 'test',
+        creator_name: 'Test Artist',
+        release_date: new Date(),
+        view_count: 0,
+        download_count: 0
+      },
+      {
+        media_id: 'test-pending-3',
+        uploader_email: 'test@akhizwe.technologies',
+        media_type: 'image',
+        title: 'Pending Image Test 3',
+        file_url: 'test_image_3.jpg',
+        file_path: 'test_image_3.jpg',
+        file_size: 512000,
+        is_approved: false,
+        uploaded_at: new Date(),
+        copyright_declared: true,
+        monetization_enabled: false,
+        description: 'Test image pending approval',
+        artist: 'Test Artist',
+        category: 'test',
+        creator_name: 'Test Artist',
+        release_date: new Date(),
+        view_count: 0,
+        download_count: 0
       }
     ];
 
-    // Create test music
-    const musicFiles = [
-      {
-        title: 'Amapiano Mix 2024',
-        description: 'Latest amapiano tracks compilation',
-        artist: 'Amapiano Master',
-        category: 'Amapiano'
-      },
-      {
-        title: 'Bafana Ba Moyah',
-        description: 'Traditional South African music',
-        artist: 'Traditional Artist',
-        category: 'Traditional'
-      }
-    ];
-
-    let createdCount = 0;
-
-    // Create videos
-    for (let i = 0; i < videoFiles.length; i++) {
-      const media_id = uuidv4();
-      const file = videoFiles[i];
+    for (const media of testMedia) {
+      const query = `
+        INSERT INTO media (
+          media_id, uploader_email, media_type, title, file_url, file_path, file_size,
+          is_approved, uploaded_at, copyright_declared, monetization_enabled,
+          description, artist, category, creator_name, release_date, view_count, download_count
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+        ON CONFLICT (media_id) DO UPDATE SET
+          title = EXCLUDED.title,
+          description = EXCLUDED.description,
+          is_approved = EXCLUDED.is_approved
+      `;
       
-      try {
-        await pool.query(
-          `INSERT INTO media (media_id, title, description, media_type, uploader_email, file_path, file_size, artist, category, is_approved)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-          [
-            media_id,
-            file.title,
-            file.description,
-            'video', // Use lowercase 'video'
-            user1,
-            'uploads/dance1.mp4',
-            1024000 + (i * 100000),
-            file.artist,
-            file.category,
-            true // Mark as approved
-          ]
-        );
-        console.log(`✅ Created video: "${file.title}" by ${file.artist}`);
-        createdCount++;
-      } catch (error) {
-        console.log(`❌ Error creating video "${file.title}": ${error.message}`);
-      }
-    }
-
-    // Create music
-    for (let i = 0; i < musicFiles.length; i++) {
-      const media_id = uuidv4();
-      const file = musicFiles[i];
+      const values = [
+        media.media_id, media.uploader_email, media.media_type, media.title,
+        media.file_url, media.file_path, media.file_size, media.is_approved,
+        media.uploaded_at, media.copyright_declared, media.monetization_enabled,
+        media.description, media.artist, media.category, media.creator_name,
+        media.release_date, media.view_count, media.download_count
+      ];
       
-      try {
-        await pool.query(
-          `INSERT INTO media (media_id, title, description, media_type, uploader_email, file_path, file_size, artist, category, is_approved)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-          [
-            media_id,
-            file.title,
-            file.description,
-            'audio', // Use lowercase 'audio'
-            user2,
-            'uploads/amapiano1.mp3',
-            512000 + (i * 50000),
-            file.artist,
-            file.category,
-            true // Mark as approved
-          ]
-        );
-        console.log(`✅ Created music: "${file.title}" by ${file.artist}`);
-        createdCount++;
-      } catch (error) {
-        console.log(`❌ Error creating music "${file.title}": ${error.message}`);
-      }
+      await client.query(query, values);
+      console.log(`Created test media: ${media.title}`);
     }
-
-    console.log(`\n🎉 Successfully created ${createdCount} media items!`);
-    console.log('\n📊 You can now test the search functionality:');
-    console.log('   - Search for "amapiano" (should find amapiano content)');
-    console.log('   - Search for "artist names" (should find by artist)');
-    console.log('   - Search for "video" or "music" (should find by description)');
-    console.log('   - Use single characters like "a", "m", "d" to test basic search');
-
+    
+    console.log('✅ Test media created successfully!');
+    
+    // Verify creation
+    const result = await client.query(
+      'SELECT COUNT(*) as count FROM media WHERE is_approved = false'
+    );
+    console.log(`📊 Total unapproved media: ${result.rows[0].count}`);
+    
   } catch (error) {
-    console.error('❌ Error creating test media:', error.message);
+    console.error('❌ Error creating test media:', error);
   } finally {
+    client.release();
     await pool.end();
   }
 }

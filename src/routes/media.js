@@ -6,7 +6,11 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const NotificationService = require('../services/notificationService');
+const MediaValidationService = require('../services/mediaValidationService');
 const { createClient } = require('@supabase/supabase-js');
+
+// Initialize validation service
+const validationService = new MediaValidationService();
 
 const supabase = createClient(
   'https://rkuzqajmxnatyulwoxzy.supabase.co',
@@ -22,9 +26,11 @@ async function generateSignedUrl(bucket, filePath) {
 
 // Helper function to get bucket from media_type
 function getBucketFromMediaType(mediaType) {
-  if (mediaType === 'VIDEO') return 'videos';
-  if (mediaType === 'MUSIC') return 'audio';
-  if (mediaType === 'IMAGE') return 'images';
+  // Handle both uppercase (database) and lowercase (normalized) media types
+  const upperType = mediaType.toUpperCase();
+  if (upperType === 'VIDEO') return 'videos';
+  if (upperType === 'MUSIC') return 'audio';
+  if (upperType === 'IMAGE') return 'images';
   return null;
 }
 
@@ -162,9 +168,9 @@ router.post('/upload', authMiddleware, upload.single('file'), async (req, res) =
     const currentDate = new Date().toISOString().split('T')[0]; // Current date in YYYY-MM-DD format
 
     await pool.query(
-      `INSERT INTO media (media_id, title, description, media_type, uploader_email, file_url, file_path, file_size, artist, category, release_date, copyright_declared, is_approved, uploaded_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CURRENT_TIMESTAMP)`,
-      [media_id, title, description || '', dbMediaType, req.user.email, filePath, filePath, file_size, userFullName, category || '', currentDate, true, false]
+      `INSERT INTO media (media_id, title, description, media_type, uploader_email, file_url, file_path, file_size, artist, category, release_date, copyright_declared, is_approved, approval_status, uploaded_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)`,
+      [media_id, title, description || '', dbMediaType, req.user.email, filePath, filePath, file_size, userFullName, category || '', currentDate, true, false, 'PENDING']
     );
 
     // Insert into media_files table
@@ -202,7 +208,11 @@ router.get('/my', authMiddleware, async (req, res) => {
       ...media,
       media_type: media.media_type === 'MUSIC' ? 'audio' : media.media_type === 'VIDEO' ? 'video' : media.media_type === 'IMAGE' ? 'image' : media.media_type,
       likes: parseInt(media.likes) || 0,
-      comments: parseInt(media.comments) || 0
+      comments: parseInt(media.comments) || 0,
+      // Add status field for frontend display
+      status: media.approval_status ? media.approval_status.toLowerCase() : (media.is_approved ? 'approved' : 'pending'),
+      rejected_at: media.rejected_at,
+      approved_at: media.approved_at
     }));
 
     // Add signed URLs
@@ -211,6 +221,44 @@ router.get('/my', authMiddleware, async (req, res) => {
     res.json({ media: normalizedMedia });
   } catch (error) {
     console.error('Error fetching my media:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /media/rejected - Get rejected media (admin only)
+router.get('/rejected', authMiddleware, async (req, res) => {
+  try {
+    // Check if user is admin
+    if (req.user.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const result = await pool.query(
+      `SELECT m.*, u.full_name as creator_name,
+              COALESCE(like_count, 0) as likes,
+              COALESCE(comment_count, 0) as comments
+       FROM media m
+       JOIN users u ON m.uploader_email = u.email
+       LEFT JOIN (SELECT media_id, COUNT(*) as like_count FROM media_interactions WHERE interaction_type = 'LIKE' GROUP BY media_id) li ON m.media_id = li.media_id
+       LEFT JOIN (SELECT media_id, COUNT(*) as comment_count FROM media_comments GROUP BY media_id) mc ON m.media_id = mc.media_id
+       WHERE m.approval_status = 'REJECTED'
+       ORDER BY m.rejected_at DESC`
+    );
+
+    // Normalize media data to match frontend expectations
+    const normalizedMedia = result.rows.map(media => ({
+      ...media,
+      media_type: media.media_type === 'MUSIC' ? 'audio' : media.media_type === 'VIDEO' ? 'video' : media.media_type === 'IMAGE' ? 'image' : media.media_type,
+      likes: parseInt(media.likes) || 0,
+      comments: parseInt(media.comments) || 0
+    }));
+
+    // Add signed URLs
+    await addSignedUrls(normalizedMedia);
+
+    res.json({ media: normalizedMedia });
+  } catch (error) {
+    console.error('Error fetching rejected media:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -279,7 +327,7 @@ router.get('/pending', authMiddleware, async (req, res) => {
        JOIN users u ON m.uploader_email = u.email
        LEFT JOIN (SELECT media_id, COUNT(*) as like_count FROM media_interactions WHERE interaction_type = 'LIKE' GROUP BY media_id) li ON m.media_id = li.media_id
        LEFT JOIN (SELECT media_id, COUNT(*) as comment_count FROM media_comments GROUP BY media_id) mc ON m.media_id = mc.media_id
-       WHERE m.is_approved = false
+       WHERE m.approval_status = 'PENDING'
        ORDER BY m.uploaded_at ASC`
     );
 
@@ -1227,6 +1275,7 @@ router.get('/analytics', authMiddleware, async (req, res) => {
 
 // POST /media/:id/approve - Approve media (admin only)
 router.post('/:id/approve', authMiddleware, async (req, res) => {
+  const client = await pool.connect();
   try {
     // Check if user is admin
     if (req.user.role !== 'ADMIN') {
@@ -1234,32 +1283,82 @@ router.post('/:id/approve', authMiddleware, async (req, res) => {
     }
 
     const { id } = req.params;
+    const adminEmail = req.user.email;
 
-    const result = await pool.query(
-      'UPDATE media SET is_approved = true WHERE media_id = $1 RETURNING *',
-      [id]
+    await client.query('BEGIN');
+
+    // Check if media exists and is pending
+    const mediaCheck = await client.query(
+      'SELECT * FROM media WHERE media_id = $1 AND approval_status = $2',
+      [id, 'PENDING']
     );
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Media not found' });
+    if (mediaCheck.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Media not found or not in pending status' });
+    }
+
+    const media = mediaCheck.rows[0];
+
+    // Update media approval status
+    const updateResult = await client.query(
+      'UPDATE media SET approval_status = $1, is_approved = true, approved_at = CURRENT_TIMESTAMP WHERE media_id = $2 RETURNING *',
+      ['APPROVED', id]
+    );
+
+    if (updateResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(500).json({ error: 'Failed to update media status' });
     }
 
     // Create notification for uploader
     const notification_id = uuidv4();
-    await pool.query(
-      'INSERT INTO notifications (notification_id, user_email, notification_type, message, related_media_id) VALUES ($1, $2, $3, $4, $5)',
-      [notification_id, result.rows[0].uploader_email, 'MEDIA_APPROVED', `Your media "${result.rows[0].title}" has been approved!`, id]
+    const notificationMessage = `Your media "${media.title}" has been approved and is now visible to all users!`;
+    
+    await client.query(
+      'INSERT INTO notifications (notification_id, user_email, notification_type, message, related_media_id, created_at) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)',
+      [notification_id, media.uploader_email, 'MEDIA_APPROVED', notificationMessage, id]
     );
 
-    res.json({ message: 'Media approved successfully' });
+    await client.query('COMMIT');
+
+    // Send real-time notification via WebSocket
+    try {
+      const websocketService = require('../services/websocketService').getInstance();
+      if (websocketService) {
+        const notification = {
+          notification_id,
+          user_email: media.uploader_email,
+          notification_type: 'MEDIA_APPROVED',
+          message: notificationMessage,
+          related_media_id: id,
+          created_at: new Date().toISOString(),
+          is_read: false
+        };
+        websocketService.sendNotificationToUser(notification);
+      }
+    } catch (wsError) {
+      console.error('Error sending real-time notification:', wsError);
+      // Don't fail the approval process if WebSocket fails
+    }
+
+    console.log(`Media ${id} approved by admin ${adminEmail}`);
+    res.json({ 
+      message: 'Media approved successfully',
+      media: updateResult.rows[0]
+    });
   } catch (error) {
+    await client.query('ROLLBACK');
     console.error('Error approving media:', error);
     res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
   }
 });
 
 // POST /media/:id/reject - Reject media (admin only)
 router.post('/:id/reject', authMiddleware, async (req, res) => {
+  const client = await pool.connect();
   try {
     // Check if user is admin
     if (req.user.role !== 'ADMIN') {
@@ -1267,27 +1366,84 @@ router.post('/:id/reject', authMiddleware, async (req, res) => {
     }
 
     const { id } = req.params;
+    const { reason } = req.body; // Optional rejection reason
+    const adminEmail = req.user.email;
 
-    const result = await pool.query(
-      'UPDATE media SET is_approved = false WHERE media_id = $1 RETURNING *',
-      [id]
+    await client.query('BEGIN');
+
+    // Check if media exists and is pending
+    const mediaCheck = await client.query(
+      'SELECT * FROM media WHERE media_id = $1 AND approval_status = $2',
+      [id, 'PENDING']
     );
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Media not found' });
+    if (mediaCheck.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Media not found or not in pending status' });
     }
 
-    // Create notification for uploader
-    const notification_id = uuidv4();
-    await pool.query(
-      'INSERT INTO notifications (notification_id, user_email, notification_type, message, related_media_id) VALUES ($1, $2, $3, $4, $5)',
-      [notification_id, result.rows[0].uploader_email, 'MEDIA_REJECTED', `Your media "${result.rows[0].title}" has been rejected.`, id]
+    const media = mediaCheck.rows[0];
+
+    // Update media rejection status with proper atomicity
+    const updateResult = await client.query(
+      'UPDATE media SET approval_status = $1, is_approved = false, rejected_at = CURRENT_TIMESTAMP, rejected_by_email = $2 WHERE media_id = $3 RETURNING *',
+      ['REJECTED', adminEmail, id]
     );
 
-    res.json({ message: 'Media rejected successfully' });
+    if (updateResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(500).json({ error: 'Failed to update media status' });
+    }
+
+    // Create notification for uploader with detailed rejection message
+    const notification_id = uuidv4();
+    const rejectionMessage = reason 
+      ? `Your media "${media.title}" has been rejected. Reason: ${reason}. You can edit and re-upload your content.`
+      : `Your media "${media.title}" has been rejected. You can edit and re-upload your content.`;
+    
+    await client.query(
+      'INSERT INTO notifications (notification_id, user_email, notification_type, message, related_media_id, created_at) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)',
+      [notification_id, media.uploader_email, 'MEDIA_REJECTED', rejectionMessage, id]
+    );
+
+    await client.query('COMMIT');
+
+    // Send real-time notification via WebSocket
+    try {
+      const websocketService = require('../services/websocketService').getInstance();
+      if (websocketService) {
+        const notification = {
+          notification_id,
+          user_email: media.uploader_email,
+          notification_type: 'MEDIA_REJECTED',
+          message: rejectionMessage,
+          related_media_id: id,
+          created_at: new Date().toISOString(),
+          is_read: false,
+          metadata: {
+            reason: reason || null,
+            admin_email: adminEmail
+          }
+        };
+        websocketService.sendNotificationToUser(notification);
+      }
+    } catch (wsError) {
+      console.error('Error sending real-time notification:', wsError);
+      // Don't fail the rejection process if WebSocket fails
+    }
+
+    console.log(`Media ${id} rejected by admin ${adminEmail}${reason ? ` (Reason: ${reason})` : ''}`);
+    res.json({ 
+      message: 'Media rejected successfully',
+      media: updateResult.rows[0],
+      rejection_reason: reason || null
+    });
   } catch (error) {
+    await client.query('ROLLBACK');
     console.error('Error rejecting media:', error);
     res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
   }
 });
 
@@ -1362,6 +1518,147 @@ router.post('/notifications/:notification_id/read', authMiddleware, async (req, 
     res.json({ message: 'Notification marked as read' });
   } catch (error) {
     console.error('Error marking notification as read:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /media/validate/:id - Validate specific media item (admin only)
+router.get('/validate/:id', authMiddleware, async (req, res) => {
+  try {
+    // Check if user is admin
+    if (req.user.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const { id } = req.params;
+
+    // Get media details
+    const mediaResult = await pool.query(
+      'SELECT * FROM media WHERE media_id = $1',
+      [id]
+    );
+
+    if (mediaResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Media not found' });
+    }
+
+    const mediaData = mediaResult.rows[0];
+
+    // Perform validation
+    const validationResults = await validationService.validateMedia(
+      mediaData,
+      null, // No file buffer for existing media
+      mediaData.file_path
+    );
+
+    res.json({ 
+      media_id: id,
+      validation: validationResults
+    });
+  } catch (error) {
+    console.error('Error validating media:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /media/validate/batch - Batch validate multiple media items (admin only)
+router.post('/validate/batch', authMiddleware, async (req, res) => {
+  try {
+    // Check if user is admin
+    if (req.user.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const { media_ids } = req.body;
+
+    if (!Array.isArray(media_ids) || media_ids.length === 0) {
+      return res.status(400).json({ error: 'media_ids array is required' });
+    }
+
+    // Get media details for all IDs
+    const mediaItems = [];
+    for (const mediaId of media_ids) {
+      const result = await pool.query(
+        'SELECT * FROM media WHERE media_id = $1',
+        [mediaId]
+      );
+      if (result.rows.length > 0) {
+        mediaItems.push(result.rows[0]);
+      }
+    }
+
+    if (mediaItems.length === 0) {
+      return res.status(404).json({ error: 'No valid media found' });
+    }
+
+    // Perform batch validation
+    const validationResults = await validationService.batchValidate(mediaItems);
+
+    res.json({ 
+      validated_count: mediaItems.length,
+      validations: validationResults
+    });
+  } catch (error) {
+    console.error('Error batch validating media:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /media/pending/validate - Get pending media with validation results (admin only)
+router.get('/pending/validate', authMiddleware, async (req, res) => {
+  try {
+    // Check if user is admin
+    if (req.user.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    // Get pending media
+    const result = await pool.query(
+      `SELECT m.*, u.full_name as creator_name,
+              COALESCE(like_count, 0) as likes,
+              COALESCE(comment_count, 0) as comments
+       FROM media m
+       JOIN users u ON m.uploader_email = u.email
+       LEFT JOIN (SELECT media_id, COUNT(*) as like_count FROM media_interactions WHERE interaction_type = 'LIKE' GROUP BY media_id) li ON m.media_id = li.media_id
+       LEFT JOIN (SELECT media_id, COUNT(*) as comment_count FROM media_comments GROUP BY media_id) mc ON m.media_id = mc.media_id
+       WHERE m.approval_status = 'PENDING'
+       ORDER BY m.uploaded_at ASC`
+    );
+
+    // Normalize media data
+    const normalizedMedia = result.rows.map(media => ({
+      ...media,
+      media_type: media.media_type === 'MUSIC' ? 'audio' : media.media_type === 'VIDEO' ? 'video' : media.media_type === 'IMAGE' ? 'image' : media.media_type,
+      likes: parseInt(media.likes) || 0,
+      comments: parseInt(media.comments) || 0
+    }));
+
+    // Add signed URLs
+    await addSignedUrls(normalizedMedia);
+
+    // Perform batch validation
+    const validationResults = await validationService.batchValidate(normalizedMedia);
+
+    // Add validation results to media objects
+    const mediaWithValidation = normalizedMedia.map(media => ({
+      ...media,
+      validation: validationResults[media.media_id] || {
+        fileIntegrity: false,
+        contentQuality: false,
+        metadata: false,
+        safety: false,
+        technicalSpecs: false,
+        score: 0,
+        recommendations: ['Validation failed']
+      }
+    }));
+
+    res.json({ 
+      media: mediaWithValidation,
+      total_pending: normalizedMedia.length
+    });
+  } catch (error) {
+    console.error('Error fetching pending media with validation:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

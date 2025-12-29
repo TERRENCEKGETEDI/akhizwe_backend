@@ -34,10 +34,10 @@ async function createTestUser() {
 
     console.log('Test user created successfully!');
     console.log('Phone:', phone);
-   :', email);
-    console.log('Email:', password);
-  console.log('Password } catch (error) {
-    console test user:', error.error('Error creating);
+    console.log('Email:', email);
+    console.log('Password:', password);
+  } catch (error) {
+    console.error('Error creating test user:', error);
   } finally {
     pool.end();
   }
