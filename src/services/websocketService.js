@@ -11,7 +11,8 @@ class WebSocketService {
                     if (!origin) return callback(null, true);
 
                     const allowedOrigins = [
-                        'https://akhizwe-app.web.app' // Production frontend
+                        'https://akhizwe-app.web.app', // Production frontend
+                        'http://localhost:5173' // Vite dev server
                     ];
 
                     if (allowedOrigins.indexOf(origin) !== -1) {
