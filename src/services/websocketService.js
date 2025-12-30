@@ -11,8 +11,6 @@ class WebSocketService {
                     if (!origin) return callback(null, true);
 
                     const allowedOrigins = [
-                        process.env.FRONTEND_URL || "http://localhost:5173",
-                        'http://localhost:3000', // Development frontend
                         'https://akhizwe-app.web.app' // Production frontend
                     ];
 

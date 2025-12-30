@@ -27,12 +27,11 @@ const corsOptions = {
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
 
-    const allowedOrigins = [
+        const allowedOrigins = [
       'http://localhost:3000', // Development frontend
       'http://localhost:5173', // Vite dev server
       'https://akhizwe-app.web.app' // Production frontend
     ];
-
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
