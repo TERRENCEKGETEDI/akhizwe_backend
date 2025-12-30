@@ -29,7 +29,7 @@ const corsOptions = {
 
     const allowedOrigins = [
       'http://localhost:3000', // Development frontend
-      // 'http://localhost:5173', // Vite dev server
+      'http://localhost:5173', // Vite dev server
       'https://akhizwe-app.web.app' // Production frontend
     ];
 
