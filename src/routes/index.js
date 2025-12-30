@@ -115,6 +115,7 @@ const airtimeDataRoutes = require('./airtimeData');
 const ticketRoutes = require('./tickets');
 const mediaRoutes = require('./media');
 const notificationsRoutes = require('./notifications');
+const profileRoutes = require('./profile');
 
 // Mount admin routes
 router.use('/admin', adminRoutes);
@@ -130,6 +131,9 @@ router.use('/media', mediaRoutes);
 
 // Mount notifications routes
 router.use('/notifications', notificationsRoutes);
+
+// Mount profile routes
+router.use('/profile', profileRoutes);
 
 // Protected test route
 router.get('/protected', authMiddleware, (req, res) => {
