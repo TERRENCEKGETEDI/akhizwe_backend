@@ -761,23 +761,27 @@ class NotificationService {
      */
     static async getUnreadCount(email) {
         try {
-            // Try to get count from notifications table first
-            const result = await pool.query(
-                'SELECT COUNT(*) FROM notifications WHERE user_email = $1 AND is_read = false',
-                [email]
-            );
-            return parseInt(result.rows[0].count);
+            // Get count from both notifications and ticket_notifications tables
+            const countQuery = `
+                SELECT COUNT(*) as total FROM (
+                    SELECT notification_id FROM notifications WHERE user_email = $1 AND is_read = false
+                    UNION ALL
+                    SELECT notification_id FROM ticket_notifications WHERE user_email = $1
+                ) as combined
+            `;
+            const result = await pool.query(countQuery, [email]);
+            return parseInt(result.rows[0].total);
         } catch (error) {
-            console.error('Error getting unread count from notifications table:', error);
+            console.error('Error getting unread count from notifications tables:', error);
             // Fallback: count interactions and comments as unread notifications
             try {
                 const userMediaResult = await pool.query(
                     'SELECT media_id FROM media WHERE uploader_email = $1',
                     [email]
                 );
-                
+
                 const userMediaIds = userMediaResult.rows.map(row => row.media_id);
-                
+
                 if (userMediaIds.length === 0) {
                     return 0;
                 }
